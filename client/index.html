@@ -190,39 +190,68 @@
       return 2 * R * Math.asin(Math.min(1, Math.sqrt(h)));
     }
 
-    // Draw the minimap framed on the available points (departure, arrival, plane).
+    // Interpolate the great circle between two lon/lat points (n+1 samples).
+    // A flight follows a great circle, which is a CURVE in equirectangular space —
+    // drawing a straight line would leave the plane sitting off the route.
+    function gcInterp(a, b, n) {
+      var toR = Math.PI / 180, toD = 180 / Math.PI;
+      var la1 = a.lat * toR, lo1 = a.lon * toR, la2 = b.lat * toR, lo2 = b.lon * toR;
+      var dd = 2 * Math.asin(Math.sqrt(Math.pow(Math.sin((la2 - la1) / 2), 2) + Math.cos(la1) * Math.cos(la2) * Math.pow(Math.sin((lo2 - lo1) / 2), 2)));
+      if (!dd || isNaN(dd)) return [{ lat: a.lat, lon: a.lon }, { lat: b.lat, lon: b.lon }];
+      var out = [];
+      for (var i = 0; i <= n; i++) {
+        var f = i / n, A = Math.sin((1 - f) * dd) / Math.sin(dd), B = Math.sin(f * dd) / Math.sin(dd);
+        var x = A * Math.cos(la1) * Math.cos(lo1) + B * Math.cos(la2) * Math.cos(lo2);
+        var y = A * Math.cos(la1) * Math.sin(lo1) + B * Math.cos(la2) * Math.sin(lo2);
+        var z = A * Math.sin(la1) + B * Math.sin(la2);
+        out.push({ lat: Math.atan2(z, Math.sqrt(x * x + y * y)) * toD, lon: Math.atan2(y, x) * toD });
+      }
+      return out;
+    }
+    // Make a lon sequence continuous across the antimeridian.
+    function unwrap(points) {
+      var out = [{ lat: points[0].lat, lon: points[0].lon }];
+      for (var i = 1; i < points.length; i++) {
+        var lon = points[i].lon, prev = out[i - 1].lon;
+        while (lon - prev > 180) lon -= 360;
+        while (lon - prev < -180) lon += 360;
+        out.push({ lat: points[i].lat, lon: lon });
+      }
+      return out;
+    }
+
+    // Draw the minimap framed on the route + plane, with a great-circle route.
     function drawMap(dep, arr, plane) {
-      var raw = []; if (dep) raw.push(dep); if (arr) raw.push(arr); if (plane) raw.push(plane);
-      if (!raw.length) return '';
-      var pts = raw.map(function (p) { return { lat: p.lat, lon: p.lon }; });
-      // dateline: if the longitudinal span exceeds 180°, shift negatives by +360
-      var lons0 = pts.map(function (p) { return p.lon; });
-      var crosses = (Math.max.apply(null, lons0) - Math.min.apply(null, lons0)) > 180;
-      function shift(p) { return crosses && p.lon < 0 ? { lat: p.lat, lon: p.lon + 360 } : { lat: p.lat, lon: p.lon }; }
-      pts = pts.map(shift);
-      var D = dep ? shift(dep) : null, A = arr ? shift(arr) : null, P = plane ? shift(plane) : null;
-      var lats = pts.map(function (p) { return p.lat; }), lons = pts.map(function (p) { return p.lon; });
+      if (!dep && !arr && !plane) return '';
+      var route = (dep && arr) ? unwrap(gcInterp(dep, arr, 64)) : null;
+      var all = [];
+      if (route) all = all.concat(route);
+      else { if (dep) all.push({ lat: dep.lat, lon: dep.lon }); if (arr) all.push({ lat: arr.lat, lon: arr.lon }); }
+      var P = plane ? { lat: plane.lat, lon: plane.lon } : null;
+      if (P && route) { var mid = route[Math.floor(route.length / 2)].lon; while (P.lon - mid > 180) P.lon -= 360; while (P.lon - mid < -180) P.lon += 360; }
+      if (P) all.push(P);
+      var lats = all.map(function (p) { return p.lat; }), lons = all.map(function (p) { return p.lon; });
       var minLat = Math.min.apply(null, lats), maxLat = Math.max.apply(null, lats);
       var minLon = Math.min.apply(null, lons), maxLon = Math.max.apply(null, lons);
-      // padding + minimum span so a single point isn't infinitely zoomed
       var spanLat = Math.max(maxLat - minLat, 4), spanLon = Math.max(maxLon - minLon, 4);
-      var padLat = spanLat * 0.35 + 2, padLon = spanLon * 0.35 + 2;
+      var padLat = spanLat * 0.22 + 2, padLon = spanLon * 0.22 + 2;
       minLat -= padLat; maxLat += padLat; minLon -= padLon; maxLon += padLon;
       spanLat = maxLat - minLat; spanLon = maxLon - minLon;
       var r = Math.max(spanLon, spanLat) * 0.02;
       var vb = minLon + ' ' + (-maxLat) + ' ' + spanLon + ' ' + spanLat;
-      // world drawn once, plus a +360 copy when crossing the dateline
-      var world = '<path d="' + FT_WORLD + '" fill="var(--ft-land)" stroke="none"/>' +
-        (crosses ? '<path d="' + FT_WORLD + '" transform="translate(360,0)" fill="var(--ft-land)" stroke="none"/>' : '');
-      var route = '';
-      if (D && A) route = '<line x1="' + D.lon + '" y1="' + D.lat + '" x2="' + A.lon + '" y2="' + A.lat + '" stroke="var(--accent,#7c3aed)" stroke-width="1.5" stroke-linecap="round" stroke-dasharray="2 2" vector-effect="non-scaling-stroke"/>';
+      // draw as many +/-360 world copies as the (possibly unwrapped) lon range needs
+      var world = '';
+      for (var k = -2; k <= 2; k++) { if (k * 360 + 180 >= minLon && k * 360 - 180 <= maxLon) world += '<path d="' + FT_WORLD + '"' + (k ? ' transform="translate(' + (k * 360) + ',0)"' : '') + ' fill="var(--ft-land)" stroke="none"/>'; }
+      var routeSvg = '';
+      if (route) routeSvg = '<path d="M' + route.map(function (p) { return p.lon + ' ' + p.lat; }).join(' L') + '" fill="none" stroke="var(--accent,#7c3aed)" stroke-width="1.5" stroke-dasharray="2 2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>';
       var mk = '';
       function dot(p, fill, rr) { return '<circle cx="' + p.lon + '" cy="' + p.lat + '" r="' + rr + '" fill="' + fill + '" stroke="var(--ft-surface)" stroke-width="' + (r * 0.4) + '"/>'; }
-      if (D) mk += dot(D, 'var(--text-faint,#999)', r * 0.8);
-      if (A) mk += dot(A, 'var(--text-secondary,#bbb)', r * 0.8);
+      var d0 = route ? route[0] : dep, dN = route ? route[route.length - 1] : arr;
+      if (d0) mk += dot(d0, 'var(--text-faint,#999)', r * 0.8);
+      if (dN) mk += dot(dN, 'var(--text-secondary,#bbb)', r * 0.8);
       if (P) mk += '<circle class="ft-planepulse" cx="' + P.lon + '" cy="' + P.lat + '" r="' + (r * 1.15) + '" fill="var(--success,#16a34a)" stroke="var(--ft-surface)" stroke-width="' + (r * 0.5) + '"/>';
       return '<div class="ft-minimap"><svg viewBox="' + vb + '" preserveAspectRatio="xMidYMid slice" aria-hidden="true">' +
-        '<g transform="scale(1,-1)">' + world + route + mk + '</g></svg></div>';
+        '<g transform="scale(1,-1)">' + world + routeSvg + mk + '</g></svg></div>';
     }
 
     var STR = {
