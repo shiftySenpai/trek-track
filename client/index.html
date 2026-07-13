@@ -79,7 +79,8 @@
       map: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l-6 3V6l6-3 6 3 6-3v15l-6 3-6-3z"/><path d="M9 3v15M15 6v15"/></svg>',
       up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
       down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg>',
-      key: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.5 12.5 20 3M16 7l3 3M18 5l2 2"/></svg>'
+      key: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.5 12.5 20 3M16 7l3 3M18 5l2 2"/></svg>',
+      scan: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3z"/></svg>'
     };
 
     var STR = {
@@ -93,7 +94,7 @@
         keyadd: 'Add AeroDataBox key', keyph: 'Paste RapidAPI key', keysaved: 'Key saved',
         detected: 'Detected from booking', couldnt: "Couldn't build a flight number automatically — enter it:",
         departsIn: 'Departs in', departed: 'Departed', soon: 'Live status appears ~48 h before departure.',
-        day: 'day', days: 'days' },
+        day: 'day', days: 'days', redetect: 'Re-detect flights from booking', redetected: 'Re-detected from booking' },
       de: { loading: 'Flug wird geladen…', noflight: 'Keine Flugnummer mit dieser Buchung verknüpft.',
         link: 'Verknüpfen', enter: 'Flugnr. (z.B. LH400)', save: 'Speichern', change: 'Flugnummer ändern',
         dep: 'Abflug', arr: 'Ankunft', terminal: 'Terminal', gate: 'Gate', belt: 'Band',
@@ -104,7 +105,7 @@
         keyadd: 'AeroDataBox-Key hinzufügen', keyph: 'RapidAPI-Key einfügen', keysaved: 'Key gespeichert',
         detected: 'Aus Buchung erkannt', couldnt: 'Flugnummer konnte nicht automatisch gebildet werden — bitte eingeben:',
         departsIn: 'Abflug in', departed: 'Gestartet', soon: 'Live-Status erscheint ~48 h vor Abflug.',
-        day: 'Tag', days: 'Tage' }
+        day: 'Tag', days: 'Tage', redetect: 'Flüge neu aus Buchung erkennen', redetected: 'Aus Buchung neu erkannt' }
     };
 
     var STATUS_LABEL = {
@@ -200,9 +201,9 @@
         '<div class="ft-arrow">' + SVG.arrow + '</div>' +
         '<div class="ft-ap arr"><div class="ft-iata">' + esc(arrIata) + '</div>' + (arrName ? '<div class="ft-apname">' + esc(arrName) + '</div>' : '') + '</div></div>';
 
-      // times: prefer live status times, else booking leg times
-      var depTimes = s ? s.departure : { scheduled: leg.depTime, revised: null };
-      var arrTimes = s ? s.arrival : { scheduled: leg.arrTime, revised: null };
+      // times: prefer live status times, fall back to the booked leg times
+      var depTimes = { scheduled: (s && s.departure && s.departure.scheduled) || leg.depTime || null, revised: (s && s.departure && s.departure.revised) || null };
+      var arrTimes = { scheduled: (s && s.arrival && s.arrival.scheduled) || leg.arrTime || null, revised: (s && s.arrival && s.arrival.revised) || null };
       html += '<div class="ft-times">' + timeCol(L.dep, depTimes, null, false) + timeCol(L.arr, arrTimes, s ? s.delayMin : null, true) + '</div>';
 
       if (s) {
@@ -284,6 +285,7 @@
         }
         html += '<div class="ft-editrow"><input class="trek-input" id="ft-in" placeholder="' + esc(L.enter) + '" />' +
           '<button class="trek-btn trek-btn--primary" id="ft-save">' + esc(L.link) + '</button></div>';
+        html += '<div class="ft-keyrow"><button class="ft-keytoggle" id="ft-redetect">' + SVG.scan + ' ' + esc(L.redetect) + '</button></div>';
       }
 
       if (editing && legs.length) {
@@ -296,6 +298,7 @@
       if (legs.length) {
         html += '<div class="ft-foot"><span class="ft-updated">' + esc(L.updated) + ' ' + relTime(data.updatedAt) + (data.source === 'detected' ? ' · ' + esc(L.detected) : '') + '</span>' +
           '<span class="ft-actions">' +
+          '<button class="ft-iconbtn" id="ft-redetect" title="' + esc(L.redetect) + '">' + SVG.scan + '</button>' +
           '<button class="ft-iconbtn" id="ft-edit" title="' + esc(L.change) + '">' + SVG.edit + '</button>' +
           '<button class="ft-iconbtn" id="ft-refresh" title="' + esc(L.refresh) + '">' + SVG.refresh + '</button>' +
           '</span></div>';
@@ -315,6 +318,7 @@
       }
       var e = document.getElementById('ft-edit'); if (e) e.addEventListener('click', function () { editing = !editing; render(last); });
       var r = document.getElementById('ft-refresh'); if (r) r.addEventListener('click', function () { doRefresh(r); });
+      var rd = document.getElementById('ft-redetect'); if (rd) rd.addEventListener('click', function () { redetect(rd); });
       var kt = document.getElementById('ft-keyt'); if (kt) kt.addEventListener('click', function () { keyOpen = true; render(last); });
       var ks = document.getElementById('ft-keysave'), ki = document.getElementById('ft-keyin');
       if (ks && ki) {
@@ -356,6 +360,18 @@
         keyOpen = false;
         window.trek.notify('success', L.keysaved);
         await doRefresh(null);
+      } catch (e) { window.trek.notify('error', e.message || 'error'); }
+      busy = false;
+    }
+
+    async function redetect(btn) {
+      if (busy) return; busy = true;
+      if (btn) { var sv = btn.querySelector('svg'); if (sv) sv.classList.add('ft-spin'); }
+      try {
+        // Clearing the manual override forces a fresh detection from the reservation.
+        var data = await window.trek.invoke('/set', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId, flightNumber: '' } });
+        editing = false; last = data; render(data);
+        window.trek.notify('success', L.redetected);
       } catch (e) { window.trek.notify('error', e.message || 'error'); }
       busy = false;
     }

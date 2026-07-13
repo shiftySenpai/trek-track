@@ -34,6 +34,13 @@ actual aircraft position from the free **adsb.fi** open-data network.
   an admin sets it once (Admin → Plugins) for all users, or you paste it into the
   widget. Without a key you still get the free adsb.fi live position. Results are
   cached briefly so the public rate limits are respected.
+- **Change alerts.** When a tracked flight is delayed, cancelled, changes gate or
+  departs/arrives, delayed/cancelled flights appear as **native trip warnings**
+  in the planner, and — while you have TREK open — you get a deduplicated
+  bell/email notification. (TREK plugins can't send true background push, so
+  alerts fire when the app is open or the trip is viewed.)
+- **Re-detect button.** A one-tap "re-detect from booking" action re-reads the
+  reservation (after you edit legs/flight numbers) and clears any manual override.
 - **Stays out of the way** on non-flight reservations (trains, hotels, …).
 - Native TREK look in both light and dark themes, German and English.
 
@@ -51,6 +58,8 @@ with altitude and speed.
 | `db:own` | Stores the flight number linked to each reservation and a short-lived response cache in the plugin's own SQLite database. |
 | `db:read:trips` | Reads the reservation to auto-detect its flight number. |
 | `db:meta` | Best-effort mirror of the chosen flight number onto the reservation so other TREK surfaces can read it. |
+| `notify:send` | Sends a bell/email notification to you (only) when a tracked flight's delay, gate or status changes while TREK is open. |
+| `hook:trip-warning-provider` | Shows delayed/cancelled flights as native trip warnings in the planner. |
 | `http:outbound` | Marks the plugin as making outbound HTTP calls. |
 | `http:outbound:aerodatabox.p.rapidapi.com` | Fetches flight schedule, status, gate and delay data from AeroDataBox. |
 | `http:outbound:opendata.adsb.fi` | Fetches the live aircraft position from the adsb.fi open-data API. |

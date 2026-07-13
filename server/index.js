@@ -63,6 +63,11 @@ function normNumber(raw) {
   return String(raw).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
 }
 
+function withSpaceNum(n) {
+  const m = String(n || '').match(/^([A-Z]{2,3})(\d.*)$/);
+  return m ? m[1] + ' ' + m[2] : String(n || '');
+}
+
 function splitFlight(raw) {
   const s = normNumber(raw);
   const m = s.match(/^([A-Z]{1,3})?(\d{1,4})([A-Z]?)$/);
@@ -391,9 +396,74 @@ async function cachedPayload(ctx, tripId, reservationId, force, forcedNumber) {
   }
   const payload = await buildPayload(ctx, tripId, reservationId, forcedNumber);
   await attempt(() => ctx.db.exec(
-    'INSERT OR REPLACE INTO cache (reservation_id, payload, fetched_at) VALUES (?, ?, ?)',
-    reservationId, JSON.stringify(payload), Date.now()));
+    'INSERT OR REPLACE INTO cache (reservation_id, trip_id, payload, fetched_at) VALUES (?, ?, ?, ?)',
+    reservationId, tripId != null ? String(tripId) : null, JSON.stringify(payload), Date.now()));
   return payload;
+}
+
+// --- notifications (only possible with a bound user, i.e. from a route) -------
+// TREK forbids a userless job from notifying, so we fire while the app is open:
+// each poll diffs the flight state and, on a meaningful change, sends one
+// deduplicated bell/email notification to the acting user.
+async function maybeNotify(ctx, user, rid, payload) {
+  if (!user || !user.id || !payload || !payload.legs || !payload.legs.length) return;
+  if (payload.booking && payload.booking.phase === 'past') return;
+  const uid = String(user.id);
+  const cur = payload.legs.map((l) => {
+    const s = l.status;
+    return { n: l.number,
+      st: s ? s.status : null,
+      d: s && s.delayMin != null ? Math.round(s.delayMin / 5) * 5 : null,
+      g: s && s.arrival ? (s.arrival.gate || null) : null,
+      dg: s && s.departure ? (s.departure.gate || null) : null };
+  });
+  const sig = JSON.stringify(cur);
+  const prevRows = await attempt(() => ctx.db.query('SELECT sig FROM notif_state WHERE rid = ? AND uid = ?', rid, uid), []);
+  const prev = prevRows && prevRows[0] ? prevRows[0].sig : null;
+  await attempt(() => ctx.db.exec('INSERT OR REPLACE INTO notif_state (rid, uid, sig) VALUES (?, ?, ?)', rid, uid, sig));
+  if (!prev || prev === sig) return; // baseline or nothing changed
+  let prevArr = []; try { prevArr = JSON.parse(prev); } catch (_e) { prevArr = []; }
+  const old = {}; prevArr.forEach((o) => { old[o.n] = o; });
+  for (const c of cur) {
+    const o = old[c.n] || {};
+    let msg = null;
+    if ((c.st === 'Canceled' || c.st === 'Cancelled') && o.st !== c.st) msg = 'Flug annulliert';
+    else if (c.st === 'Diverted' && o.st !== c.st) msg = 'Flug umgeleitet';
+    else if (c.d != null && c.d >= 15 && c.d !== o.d) msg = 'Verspaetung: +' + c.d + ' min';
+    else if ((c.dg || c.g) && (c.dg || c.g) !== (o.dg || o.g)) msg = 'Gate: ' + (c.dg || c.g);
+    else if (c.st === 'Departed' && o.st !== c.st) msg = 'Gestartet';
+    else if (c.st === 'Arrived' && o.st !== c.st) msg = 'Gelandet';
+    if (msg) {
+      await attempt(() => ctx.notify.send({ title: withSpaceNum(c.n), body: msg, scope: 'user', targetId: user.id }));
+      break;
+    }
+  }
+}
+
+// --- warning provider (userless): surfaces delays/cancellations in the planner
+// from the freshest cached payloads (no extra API calls — quota-safe) ----------
+async function getTripWarnings(tripId, ctx) {
+  const out = [];
+  const rows = await attempt(() => ctx.db.query('SELECT payload, fetched_at FROM cache WHERE trip_id = ?', String(tripId)), []);
+  const now = Date.now();
+  for (const r of rows || []) {
+    if (now - Number(r.fetched_at) > 30 * 60 * 1000) continue; // ignore stale
+    let p; try { p = JSON.parse(r.payload); } catch (_e) { continue; }
+    if (!p || p.applicable === false || !Array.isArray(p.legs)) continue;
+    if (p.booking && p.booking.phase === 'past') continue;
+    for (const lg of p.legs) {
+      const s = lg.status; if (!s) continue;
+      const from = lg.from || (s.departure && s.departure.iata) || '';
+      const to = lg.to || (s.arrival && s.arrival.iata) || '';
+      const route = from && to ? ' ' + from + '→' + to : '';
+      const num = withSpaceNum(lg.number);
+      if (s.status === 'Canceled' || s.status === 'Cancelled') out.push({ level: 'error', message: num + route + ' annulliert' });
+      else if (s.status === 'Diverted') out.push({ level: 'error', message: num + route + ' umgeleitet' });
+      else if (s.delayMin != null && s.delayMin >= 20) out.push({ level: 'warning', message: num + route + ' +' + s.delayMin + ' min verspaetet' });
+    }
+    if (out.length >= 12) break;
+  }
+  return out.slice(0, 12);
 }
 
 function json(status, body) {
@@ -419,7 +489,20 @@ module.exports = definePlugin({
       'CREATE TABLE IF NOT EXISTS cache (reservation_id TEXT PRIMARY KEY, payload TEXT, fetched_at INTEGER)');
     await ctx.db.migrate('003_kv',
       'CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT)');
+    await ctx.db.migrate('004_cache_trip', 'ALTER TABLE cache ADD COLUMN trip_id TEXT');
+    await ctx.db.migrate('005_notif',
+      'CREATE TABLE IF NOT EXISTS notif_state (rid TEXT, uid TEXT, sig TEXT, PRIMARY KEY (rid, uid))');
     ctx.log.info('flight-tracker loaded');
+  },
+
+  hooks: {
+    // Native TREK trip warnings for delays/cancellations, shown when a member
+    // opens the trip. Userless + fail-safe; reads only the freshest cache.
+    warningProvider: {
+      async getWarnings(tripId, ctx) {
+        return attempt(() => getTripWarnings(tripId, ctx), []);
+      },
+    },
   },
 
   routes: [
@@ -427,14 +510,18 @@ module.exports = definePlugin({
       async handler(req, ctx) {
         const p = readParams(req);
         if (!p.reservationId) return json(400, { error: 'reservationId required' });
-        return json(200, await cachedPayload(ctx, p.tripId, String(p.reservationId), false));
+        const payload = await cachedPayload(ctx, p.tripId, String(p.reservationId), false);
+        if (!payload.cached) await attempt(() => maybeNotify(ctx, req.user, String(p.reservationId), payload));
+        return json(200, payload);
       } },
 
     { method: 'POST', path: '/refresh', auth: true,
       async handler(req, ctx) {
         const p = readParams(req);
         if (!p.reservationId) return json(400, { error: 'reservationId required' });
-        return json(200, await cachedPayload(ctx, p.tripId, String(p.reservationId), true));
+        const payload = await cachedPayload(ctx, p.tripId, String(p.reservationId), true);
+        await attempt(() => maybeNotify(ctx, req.user, String(p.reservationId), payload));
+        return json(200, payload);
       } },
 
     // Manual single-flight override for a reservation (empty clears it).
