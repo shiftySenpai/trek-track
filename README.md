@@ -9,18 +9,24 @@ actual aircraft position from the free **adsb.fi** open-data network.
 
 ## What it does
 
-- **Reads the flight straight from the booking.** It scans the reservation for a
-  flight number (e.g. `LH400`); if none is found you can type or correct it, and
-  it is remembered for that reservation.
+- **Reads the flight straight from the booking.** It builds the flight number
+  from the reservation's airline + flight-number fields (e.g. `Austrian
+  Airlines` + `254` → `OS254`), using a bundled database of ~1600 airlines. If it
+  can't, you type it once and it is remembered for that reservation.
+- **Multi-leg flights.** Connections are fully supported: each leg (e.g.
+  `KLU → VIE` on Austrian, then `VIE → HAM` on Eurowings) is tracked separately,
+  with a layover marker in between.
 - **Schedule & status** (via AeroDataBox): departure/arrival airports, scheduled
   vs. estimated times, delay in minutes, live status (boarding, en route,
   arrived, cancelled), plus terminal, gate and baggage belt.
 - **Live position in the air** (via adsb.fi): when the aircraft is transmitting
   ADS-B, it shows altitude, ground speed, climb/descent trend, registration and
   aircraft type, and a one-tap link to open the plane on a live map.
-- **Works with or without an API key.** Without an AeroDataBox key you still get
-  the free live position from adsb.fi by entering the ATC call sign (e.g.
-  `DLH400`). Results are cached briefly so the public rate limits are respected.
+- **Works with or without an API key.** Enter the AeroDataBox key on your plugin
+  settings page or paste it directly in the widget. Without a key you still get
+  the free adsb.fi live position. Results are cached briefly so the public rate
+  limits are respected.
+- **Stays out of the way** on non-flight reservations (trains, hotels, …).
 - Native TREK look in both light and dark themes, German and English.
 
 ## Screenshots
@@ -45,13 +51,13 @@ with altitude and speed.
 
 1. Install and activate the plugin, then approve its permissions.
 2. **Optional but recommended:** get a free AeroDataBox key at
-   `rapidapi.com/aedbx-aedbx/api/aerodatabox` and paste it into the plugin's
-   **AeroDataBox RapidAPI key** setting (Admin → Plugins). This unlocks the
+   `rapidapi.com/aedbx-aedbx/api/aerodatabox` and add it either on your
+   **per-user plugin settings page** (the `aerodatabox_key` field) or by pasting
+   it straight into the widget's "Add AeroDataBox key" box. This unlocks the
    schedule, gate and delay data. Without a key, only the live adsb.fi position
    is shown.
 3. Open a trip, expand a flight reservation, and the tracker appears beneath it.
-   If the flight number isn't detected automatically, type it once and it is
-   saved.
+   The flight number(s) are detected from the booking; if not, type once to save.
 
 Data sources: [AeroDataBox](https://aerodatabox.com/) and
 [adsb.fi](https://adsb.fi/) — adsb.fi open data is for personal, non-commercial

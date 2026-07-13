@@ -1,16 +1,40 @@
 // Flight Tracker — TREK reservation-detail widget.
 // Combines AeroDataBox (schedule/status, needs a RapidAPI key) with
-// adsb.fi opendata (live airborne position, free/no key). Runs in an isolated
+// adsb.fi opendata (live airborne position, free/no key). Handles multi-leg
+// flights (each leg has its own airline + flight number). Runs in an isolated
 // child process; all host access is via `ctx`.
 const { definePlugin } = require('trek-plugin-sdk');
+
+// Full airline dataset (OpenFlights-derived), bundled under server/data.
+let DATA = { nameToIata: {}, iataIcao: {} };
+try { DATA = require('./data/airlines.json'); } catch (_e) { /* optional */ }
 
 const ADSB_HOST = 'https://opendata.adsb.fi/api';
 const AERO_HOST = 'https://aerodatabox.p.rapidapi.com';
 
-// Cache TTL for a reservation's combined payload. Protects the adsb.fi
-// 1-req/s limit and the AeroDataBox quota when several clients poll.
 const CACHE_TTL_MS = 45 * 1000;
-const FETCH_TIMEOUT_MS = 9000;
+const FETCH_TIMEOUT_MS = 8000;
+const MAX_LEGS = 6;
+
+// Curated overrides — win over the dataset (fixes cargo/subsidiary IATA clashes
+// like LH -> DLH, not GEC). Names lowercased.
+const CURATED_IATA = {
+  'austrian': 'OS', 'austrian airlines': 'OS', 'lufthansa': 'LH', 'swiss': 'LX',
+  'eurowings': 'EW', 'brussels airlines': 'SN', 'air france': 'AF', 'klm': 'KL',
+  'british airways': 'BA', 'iberia': 'IB', 'vueling': 'VY', 'ryanair': 'FR',
+  'easyjet': 'U2', 'wizz air': 'W6', 'turkish airlines': 'TK', 'emirates': 'EK',
+  'qatar airways': 'QR', 'etihad': 'EY', 'etihad airways': 'EY', 'united': 'UA',
+  'united airlines': 'UA', 'american airlines': 'AA', 'delta': 'DL', 'delta air lines': 'DL',
+  'ita airways': 'AZ', 'alitalia': 'AZ', 'condor': 'DE', 'sas': 'SK', 'finnair': 'AY',
+  'norwegian': 'DY', 'tap air portugal': 'TP', 'aer lingus': 'EI', 'aegean': 'A3',
+  'lot polish airlines': 'LO', 'transavia': 'HV', 'edelweiss': 'WK', 'sunexpress': 'XQ',
+};
+const CURATED_ICAO = {
+  OS: 'AUA', LH: 'DLH', LX: 'SWR', EW: 'EWG', SN: 'BEL', AF: 'AFR', KL: 'KLM', BA: 'BAW',
+  IB: 'IBE', VY: 'VLG', FR: 'RYR', U2: 'EZY', W6: 'WZZ', TK: 'THY', EK: 'UAE', QR: 'QTR',
+  EY: 'ETD', UA: 'UAL', AA: 'AAL', DL: 'DAL', AZ: 'ITY', DE: 'CFG', SK: 'SAS', AY: 'FIN',
+  DY: 'NAX', TP: 'TAP', EI: 'EIN', A3: 'AEE', LO: 'LOT', HV: 'TRA', WK: 'EDW', XQ: 'SXS',
+};
 
 // --- small helpers ----------------------------------------------------------
 
@@ -18,7 +42,6 @@ async function attempt(fn, fallback) {
   try { return await fn(); } catch (_e) { return fallback; }
 }
 
-// Fetch JSON with a timeout; returns { ok, status, data, error }.
 async function fetchJson(url, options) {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
@@ -35,31 +58,91 @@ async function fetchJson(url, options) {
   }
 }
 
-// Normalise a user/detected flight number: strip spaces/dashes, upper-case.
 function normNumber(raw) {
   if (!raw) return '';
   return String(raw).toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8);
 }
 
-// Pull a plausible flight number out of a reservation's textual fields.
-const FLIGHT_RE = /\b([A-Z]{2,3})\s?-?\s?(\d{1,4}[A-Z]?)\b/;
-function detectFlightNumber(reservation) {
-  if (!reservation) return '';
-  const fields = ['flight_number', 'flightNumber', 'number', 'code', 'reference',
-    'reference_code', 'title', 'name', 'provider', 'carrier', 'description', 'notes'];
-  for (const f of fields) {
-    const v = reservation[f];
-    if (typeof v === 'string') {
-      const m = v.toUpperCase().match(FLIGHT_RE);
-      if (m) return normNumber(m[1] + m[2]);
-    }
+function splitFlight(raw) {
+  const s = normNumber(raw);
+  const m = s.match(/^([A-Z]{1,3})?(\d{1,4})([A-Z]?)$/);
+  if (!m) return null;
+  return { prefix: m[1] || '', digits: m[2], suffix: m[3] || '' };
+}
+
+function airlineToIata(name, code) {
+  if (code) { const c = String(code).toUpperCase().replace(/[^A-Z0-9]/g, ''); if (/^[A-Z0-9]{2}$/.test(c)) return c; }
+  if (name) {
+    const k = String(name).toLowerCase().trim();
+    if (CURATED_IATA[k]) return CURATED_IATA[k];
+    if (DATA.nameToIata[k]) return DATA.nameToIata[k];
   }
   return '';
 }
 
+function iataToIcao(iata, code) {
+  if (code) { const c = String(code).toUpperCase().replace(/[^A-Z]/g, ''); if (/^[A-Z]{3}$/.test(c)) return c; }
+  if (iata) { if (CURATED_ICAO[iata]) return CURATED_ICAO[iata]; if (DATA.iataIcao[iata]) return DATA.iataIcao[iata]; }
+  return '';
+}
+
+function parseMeta(r) {
+  if (!r) return {};
+  let m = r.metadata != null ? r.metadata : r.meta;
+  if (typeof m === 'string') { try { m = JSON.parse(m || '{}'); } catch (_e) { m = {}; } }
+  return (m && typeof m === 'object') ? m : {};
+}
+
+// Ordered endpoints (from -> stops -> to), by `sequence`.
+function orderedEndpoints(r) {
+  if (!Array.isArray(r.endpoints)) return [];
+  return r.endpoints.slice().sort((a, b) => (a.sequence || 0) - (b.sequence || 0));
+}
+
+// Mirror of TREK's getFlightLegs: metadata.legs is the source of truth for
+// multi-leg; otherwise a single leg from the ordered endpoints + flat metadata.
+function getFlightLegs(r) {
+  const meta = parseMeta(r);
+  if (Array.isArray(meta.legs) && meta.legs.length) {
+    return meta.legs.slice(0, MAX_LEGS).map((l) => ({
+      from: l.from || null, to: l.to || null,
+      airline: l.airline || null, airlineCode: l.airline_code || null,
+      flight: l.flight_number || l.flightNumber || null,
+      depTime: l.dep_time || null, arrTime: l.arr_time || null,
+    }));
+  }
+  const eps = orderedEndpoints(r);
+  const first = eps[0], last = eps[eps.length - 1];
+  const from = (first && first.code) || meta.departure_airport || null;
+  const to = (last && last.code) || meta.arrival_airport || null;
+  if (!from && !to && !meta.flight_number) return [];
+  return [{
+    from, to,
+    airline: meta.airline || null, airlineCode: meta.airline_code || null,
+    flight: meta.flight_number || meta.flightNumber || null,
+    depTime: (first && first.local_time) || null,
+    arrTime: (last && last.local_time) || null,
+  }];
+}
+
+// Resolve a raw leg into queryable identifiers.
+function resolveLeg(leg) {
+  let number = '', callsign = '';
+  const sf = leg.flight ? splitFlight(leg.flight) : null;
+  if (sf) {
+    const prefix = sf.prefix || airlineToIata(leg.airline, leg.airlineCode);
+    if (prefix) number = prefix + sf.digits + sf.suffix;
+    const icao = iataToIcao(sf.prefix || prefix, leg.airlineCode);
+    if (icao) callsign = icao + sf.digits + sf.suffix;
+  }
+  return {
+    number, callsign, airline: leg.airline, from: leg.from, to: leg.to,
+    depTime: leg.depTime, arrTime: leg.arrTime, rawFlight: leg.flight,
+  };
+}
+
 // --- external data sources ---------------------------------------------------
 
-// AeroDataBox: schedule + status by flight number. Returns { data, error }.
 async function fetchAero(number, key) {
   if (!key || !number) return { data: null, error: null };
   const url = AERO_HOST + '/flights/number/' + encodeURIComponent(number) +
@@ -72,7 +155,6 @@ async function fetchAero(number, key) {
     : (r.data && Array.isArray(r.data.flights) ? r.data.flights
       : (r.data && r.data.departure ? [r.data] : []));
   if (!list.length) return { data: null, error: null };
-  // Choose the leg whose scheduled departure is closest to now.
   const now = Date.now();
   list.sort((a, b) => Math.abs(depTime(a) - now) - Math.abs(depTime(b) - now));
   return { data: normaliseAero(list[0]), error: null };
@@ -133,14 +215,15 @@ function airportBlock(block, times) {
   };
 }
 
-// adsb.fi: live airborne position. Tries registration, then call sign, then the
-// raw flight number as a call sign. Returns { data, error }.
 async function fetchLive(opts) {
   const tries = [];
   if (opts.reg) tries.push('/v2/registration/' + encodeURIComponent(opts.reg));
   if (opts.callSign) tries.push('/v2/callsign/' + encodeURIComponent(normNumber(opts.callSign)));
+  if (opts.callsignHint) tries.push('/v2/callsign/' + encodeURIComponent(normNumber(opts.callsignHint)));
   if (opts.number) tries.push('/v2/callsign/' + encodeURIComponent(opts.number));
+  const seen = {};
   for (const path of tries) {
+    if (seen[path]) continue; seen[path] = 1;
     const r = await fetchJson(ADSB_HOST + path, { headers: { accept: 'application/json' } });
     if (r.ok && r.data && Array.isArray(r.data.ac) && r.data.ac.length) {
       return { data: normaliseLive(r.data.ac[0]), error: null };
@@ -171,57 +254,84 @@ function normaliseLive(ac) {
   };
 }
 
-// --- core: build the combined payload for a reservation ----------------------
-
-function summariseReservation(r) {
-  return { id: r.id, type: r.type || r.category || null, title: r.title || r.name || null };
-}
-
-async function buildPayload(ctx, tripId, reservationId, forcedNumber) {
-  const key = (ctx.config && ctx.config.aerodatabox_key) ? String(ctx.config.aerodatabox_key) : '';
-  const hasKey = !!key;
-
-  // Resolve the flight number: explicit override > stored > detected.
-  let number = normNumber(forcedNumber);
-  let source = number ? 'manual' : 'none';
-
-  if (!number) {
-    const rows = await attempt(() => ctx.db.query('SELECT flight_number FROM flights WHERE reservation_id = ?', reservationId), []);
-    if (rows && rows[0] && rows[0].flight_number) { number = normNumber(rows[0].flight_number); source = 'stored'; }
-  }
-
-  let reservationSummary = null;
-  if (!number) {
-    const detected = await attempt(async () => {
-      const list = await ctx.trips.getReservations(Number(tripId));
-      const r = (list || []).find((x) => String(x.id) === String(reservationId));
-      if (r) reservationSummary = summariseReservation(r);
-      return detectFlightNumber(r);
-    }, '');
-    if (detected) { number = detected; source = 'detected'; }
-  }
-
-  if (!number) {
-    return { flightNumber: null, source: 'none', hasKey, status: null, live: null,
-      reservation: reservationSummary, errors: [], updatedAt: Date.now() };
-  }
-
+// Fetch status + live for one resolved leg.
+async function trackLeg(leg, key) {
   const errors = [];
-  const aero = await fetchAero(number, key);
+  const aero = await fetchAero(leg.number, key);
   if (aero.error) errors.push('status: ' + aero.error);
   const status = aero.data;
-
   const live = await fetchLive({
     reg: status && status.aircraftReg,
     callSign: status && status.callSign,
-    number: number,
+    callsignHint: leg.callsign,
+    number: leg.number,
   });
   if (live.error) errors.push('live: ' + live.error);
+  return Object.assign({}, leg, { status, live: live.data, errors });
+}
 
-  return {
-    flightNumber: number, source, hasKey, status, live: live.data,
-    reservation: reservationSummary, errors, updatedAt: Date.now(),
-  };
+// --- key resolution: user setting > instance config > in-widget stored key ---
+
+async function getKey(ctx) {
+  const u = await attempt(() => ctx.settings.get('aerodatabox_key'), null);
+  if (u) return String(u);
+  if (ctx.config && ctx.config.aerodatabox_key) return String(ctx.config.aerodatabox_key);
+  const rows = await attempt(() => ctx.db.query("SELECT v FROM kv WHERE k = 'aerodatabox_key'"), []);
+  if (rows && rows[0] && rows[0].v) return String(rows[0].v);
+  return '';
+}
+
+// --- core: build the combined payload for a reservation ----------------------
+
+async function readReservation(ctx, tripId, reservationId) {
+  return attempt(async () => {
+    const list = await ctx.trips.getReservations(Number(tripId));
+    return (list || []).find((x) => String(x.id) === String(reservationId)) || null;
+  }, null);
+}
+
+async function buildPayload(ctx, tripId, reservationId, forcedNumber) {
+  const key = await getKey(ctx);
+  const hasKey = !!key;
+
+  // A manual/stored override replaces detection with a single leg.
+  let overrideNumber = normNumber(forcedNumber);
+  let source = overrideNumber ? 'manual' : 'none';
+  if (!overrideNumber) {
+    const rows = await attempt(() => ctx.db.query('SELECT flight_number FROM flights WHERE reservation_id = ?', reservationId), []);
+    if (rows && rows[0] && rows[0].flight_number) { overrideNumber = normNumber(rows[0].flight_number); source = 'stored'; }
+  }
+
+  const resv = tripId ? await readReservation(ctx, tripId, reservationId) : null;
+  const bookingType = resv ? (resv.type || parseMeta(resv).type || null) : null;
+  const booking = { type: bookingType };
+
+  let rawLegs;
+  if (overrideNumber) {
+    const sf = splitFlight(overrideNumber);
+    rawLegs = [resolveLeg({ flight: overrideNumber, airline: null, from: null, to: null })];
+    // keep number as typed even if it had no prefix
+    if (rawLegs[0] && !rawLegs[0].number) rawLegs[0].number = overrideNumber;
+  } else {
+    rawLegs = resv ? getFlightLegs(resv).map(resolveLeg) : [];
+    if (rawLegs.length) source = 'detected';
+  }
+
+  // Only legs we can actually query.
+  const queryable = rawLegs.filter((l) => l.number);
+
+  if (!queryable.length) {
+    const applicable = !bookingType || bookingType === 'flight';
+    return { applicable, source: 'none', hasKey, legs: [], booking,
+      // surface any detected-but-unqueryable legs so the UI can hint
+      hint: rawLegs.length ? rawLegs.map((l) => ({ airline: l.airline, from: l.from, to: l.to, rawFlight: l.rawFlight })) : null,
+      updatedAt: Date.now() };
+  }
+
+  // Track each leg (parallel; cache dedups repeat load).
+  const legs = await Promise.all(queryable.map((l) => attempt(() => trackLeg(l, key), Object.assign({}, l, { status: null, live: null, errors: ['failed'] }))));
+
+  return { applicable: true, source, hasKey, legs, booking, updatedAt: Date.now() };
 }
 
 async function cachedPayload(ctx, tripId, reservationId, force, forcedNumber) {
@@ -249,6 +359,7 @@ function readParams(req) {
     tripId: b.tripId != null ? b.tripId : q.tripId,
     reservationId: b.reservationId != null ? b.reservationId : q.reservationId,
     flightNumber: b.flightNumber != null ? b.flightNumber : q.flightNumber,
+    apiKey: b.apiKey != null ? b.apiKey : q.apiKey,
   };
 }
 
@@ -258,29 +369,27 @@ module.exports = definePlugin({
       'CREATE TABLE IF NOT EXISTS flights (reservation_id TEXT PRIMARY KEY, trip_id TEXT, flight_number TEXT, updated_at INTEGER)');
     await ctx.db.migrate('002_cache',
       'CREATE TABLE IF NOT EXISTS cache (reservation_id TEXT PRIMARY KEY, payload TEXT, fetched_at INTEGER)');
+    await ctx.db.migrate('003_kv',
+      'CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT)');
     ctx.log.info('flight-tracker loaded');
   },
 
   routes: [
-    // Current combined status for a reservation (uses the short-lived cache).
     { method: 'GET', path: '/status', auth: true,
       async handler(req, ctx) {
         const p = readParams(req);
         if (!p.reservationId) return json(400, { error: 'reservationId required' });
-        const payload = await cachedPayload(ctx, p.tripId, String(p.reservationId), false);
-        return json(200, payload);
+        return json(200, await cachedPayload(ctx, p.tripId, String(p.reservationId), false));
       } },
 
-    // Force a fresh fetch, bypassing the cache.
     { method: 'POST', path: '/refresh', auth: true,
       async handler(req, ctx) {
         const p = readParams(req);
         if (!p.reservationId) return json(400, { error: 'reservationId required' });
-        const payload = await cachedPayload(ctx, p.tripId, String(p.reservationId), true);
-        return json(200, payload);
+        return json(200, await cachedPayload(ctx, p.tripId, String(p.reservationId), true));
       } },
 
-    // Set (or clear, with an empty value) the flight number for a reservation.
+    // Manual single-flight override for a reservation (empty clears it).
     { method: 'POST', path: '/set', auth: true,
       async handler(req, ctx) {
         const p = readParams(req);
@@ -296,8 +405,18 @@ module.exports = definePlugin({
           await attempt(() => ctx.meta.delete('reservation', Number(rid), 'flight_number'));
         }
         await attempt(() => ctx.db.exec('DELETE FROM cache WHERE reservation_id = ?', rid));
-        const payload = await cachedPayload(ctx, p.tripId, rid, true, number);
-        return json(200, payload);
+        return json(200, await cachedPayload(ctx, p.tripId, rid, true, number));
+      } },
+
+    // In-widget fallback for the AeroDataBox key (stored in the plugin's own DB).
+    { method: 'POST', path: '/key', auth: true,
+      async handler(req, ctx) {
+        const p = readParams(req);
+        const val = (p.apiKey == null ? '' : String(p.apiKey)).trim();
+        if (val) await ctx.db.exec("INSERT OR REPLACE INTO kv (k, v) VALUES ('aerodatabox_key', ?)", val);
+        else await ctx.db.exec("DELETE FROM kv WHERE k = 'aerodatabox_key'");
+        await attempt(() => ctx.db.exec('DELETE FROM cache'));
+        return json(200, { ok: true, hasKey: !!val });
       } },
   ],
 });

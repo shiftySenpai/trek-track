@@ -1,0 +1,20 @@
+{
+  "config": {},
+  "trips": {
+    "1": {
+      "members": [1],
+      "data": { "id": 1, "title": "Test Trip" },
+      "reservations": [
+        { "id": 55, "type": "flight", "status": "confirmed", "title": "Austrian Airlines",
+          "metadata": "{\"airline\":\"Austrian Airlines\",\"flight_number\":\"254\",\"departure_airport\":\"HAM\",\"arrival_airport\":\"KLU\",\"seat\":\"16F\"}",
+          "endpoints": [ {"role":"from","code":"HAM","sequence":0,"local_time":"09:00"}, {"role":"to","code":"KLU","sequence":1,"local_time":"11:00"} ] },
+        { "id": 56, "type": "train", "status": "confirmed", "title": "ICE 588",
+          "metadata": "{\"train_number\":\"ICE 588\",\"platform\":\"7\"}" },
+        { "id": 58, "type": "flight", "status": "confirmed", "title": "KLU -> VIE -> HAM",
+          "metadata": "{\"legs\":[{\"from\":\"KLU\",\"to\":\"VIE\",\"airline\":\"Austrian Airlines\",\"flight_number\":\"110\",\"dep_time\":\"14:05\",\"arr_time\":\"14:55\"},{\"from\":\"VIE\",\"to\":\"HAM\",\"airline\":\"Eurowings\",\"flight_number\":\"8863\",\"dep_time\":\"16:00\",\"arr_time\":\"17:30\"}]}",
+          "endpoints": [ {"role":"from","code":"KLU","sequence":0}, {"role":"stop","code":"VIE","sequence":1}, {"role":"to","code":"HAM","sequence":2} ] }
+      ]
+    }
+  },
+  "users": {}
+}
