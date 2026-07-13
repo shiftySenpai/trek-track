@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Flight Tracker</title>
+  <!-- trek:ui -->
+  <style>
+    :root { color-scheme: light; }
+    :root[data-theme="dark"] { color-scheme: dark; }
+    body { margin: 0; }
+    #app { padding: 4px 2px; font-variant-numeric: tabular-nums; }
+    svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.125em; }
+    .ft-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .ft-flight { font-size: 15px; font-weight: 700; letter-spacing: 0.2px; }
+    .ft-air { color: var(--text-muted); font-size: 12px; }
+    .ft-route { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; margin: 10px 0 2px; }
+    .ft-ap { min-width: 0; }
+    .ft-ap.arr { text-align: right; }
+    .ft-iata { font-size: 18px; font-weight: 700; line-height: 1.1; }
+    .ft-apname { color: var(--text-muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ft-arrow { color: var(--text-faint); display: flex; align-items: center; }
+    .ft-times { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px; }
+    .ft-times .arr { text-align: right; }
+    .ft-t-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-faint); }
+    .ft-t-sched { font-size: 14px; font-weight: 600; }
+    .ft-t-rev { font-size: 12px; }
+    .ft-t-rev.late { color: var(--danger); }
+    .ft-t-rev.early { color: var(--success); }
+    .ft-strike { text-decoration: line-through; color: var(--text-faint); font-weight: 400; }
+    .ft-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+    .ft-pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--bg-hover); color: var(--text-secondary); }
+    .ft-pill b { color: var(--text-primary); font-weight: 600; }
+    .ft-live { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border-faint); }
+    .ft-live-head { display: flex; align-items: center; gap: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 6px; }
+    .ft-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 0 var(--success); }
+    .ft-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+    .ft-stat .v { font-size: 14px; font-weight: 700; }
+    .ft-stat .k { font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-faint); }
+    .ft-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+    .ft-updated { font-size: 11px; color: var(--text-faint); }
+    .ft-actions { display: flex; gap: 4px; }
+    .ft-iconbtn { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 4px; border-radius: 6px; display: inline-flex; }
+    .ft-iconbtn:hover { background: var(--bg-hover); color: var(--text-primary); }
+    .ft-editrow { display: flex; gap: 6px; margin-top: 8px; }
+    .ft-editrow input { flex: 1; min-width: 0; }
+    .ft-empty { color: var(--text-muted); font-size: 12px; }
+    .ft-linkline { font-size: 11px; color: var(--text-faint); margin-top: 6px; word-break: break-all; }
+    .ft-err { color: var(--danger); font-size: 11px; margin-top: 6px; }
+    .ft-hint { color: var(--text-faint); font-size: 11px; margin-top: 8px; }
+    @media (prefers-reduced-motion: no-preference) {
+      .ft-dot.pulse { animation: ftpulse 2s ease-out infinite; }
+      @keyframes ftpulse { 0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.5); } 70% { box-shadow: 0 0 0 6px rgba(34,197,94,0); } 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); } }
+    }
+    .ft-spin { animation: ftspin 0.9s linear infinite; }
+    @keyframes ftspin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div id="app"><p class="ft-empty" id="boot">Loading…</p></div>
+  <script>
+  (function () {
+    var SVG = {
+      plane: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>',
+      arrow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
+      refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>',
+      edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
+      map: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l-6 3V6l6-3 6 3 6-3v15l-6 3-6-3z"/><path d="M9 3v15M15 6v15"/></svg>',
+      up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
+      down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg>'
+    };
+
+    var STR = {
+      en: { loading: 'Loading flight…', noflight: 'No flight number linked to this reservation.',
+        link: 'Link', enter: 'Flight no. (e.g. LH400)', save: 'Save', change: 'Change flight number',
+        dep: 'Departure', arr: 'Arrival', terminal: 'Terminal', gate: 'Gate', belt: 'Belt',
+        inair: 'In the air', alt: 'Altitude', spd: 'Ground speed', ac: 'Aircraft', onground: 'On the ground',
+        openmap: 'Open on map', updated: 'Updated', refresh: 'Refresh', delayLate: 'delayed', delayEarly: 'early',
+        ontime: 'On time', nostatus: 'No live schedule found for this flight right now.',
+        keyhint: 'Tip: add an AeroDataBox key in the plugin settings for schedule, gate and delay data.',
+        callsignhint: 'For live position without a key, enter the ATC call sign (e.g. DLH400).' },
+      de: { loading: 'Flug wird geladen…', noflight: 'Keine Flugnummer mit dieser Buchung verknüpft.',
+        link: 'Verknüpfen', enter: 'Flugnr. (z.B. LH400)', save: 'Speichern', change: 'Flugnummer ändern',
+        dep: 'Abflug', arr: 'Ankunft', terminal: 'Terminal', gate: 'Gate', belt: 'Band',
+        inair: 'In der Luft', alt: 'Höhe', spd: 'Geschwindigkeit', ac: 'Flugzeug', onground: 'Am Boden',
+        openmap: 'Auf Karte öffnen', updated: 'Aktualisiert', refresh: 'Aktualisieren', delayLate: 'verspätet', delayEarly: 'früher',
+        ontime: 'Pünktlich', nostatus: 'Aktuell kein Live-Fahrplan zu diesem Flug gefunden.',
+        keyhint: 'Tipp: AeroDataBox-Key in den Plugin-Einstellungen ergänzen für Fahrplan, Gate und Verspätung.',
+        callsignhint: 'Für Live-Position ohne Key das ATC-Callsign eingeben (z.B. DLH400).' }
+    };
+
+    var STATUS_LABEL = {
+      en: { Expected: 'Expected', EnRoute: 'En route', Departed: 'Departed', Arrived: 'Arrived', Delayed: 'Delayed',
+        Canceled: 'Canceled', Cancelled: 'Cancelled', Diverted: 'Diverted', Boarding: 'Boarding', GateClosed: 'Gate closed',
+        CheckIn: 'Check-in', Approaching: 'Approaching', Unknown: 'Unknown' },
+      de: { Expected: 'Erwartet', EnRoute: 'Unterwegs', Departed: 'Gestartet', Arrived: 'Gelandet', Delayed: 'Verspätet',
+        Canceled: 'Annulliert', Cancelled: 'Annulliert', Diverted: 'Umgeleitet', Boarding: 'Boarding', GateClosed: 'Gate zu',
+        CheckIn: 'Check-in', Approaching: 'Im Anflug', Unknown: 'Unbekannt' }
+    };
+
+    function statusVariant(s) {
+      if (s === 'Arrived') return 'success';
+      if (s === 'EnRoute' || s === 'Departed' || s === 'Approaching' || s === 'Boarding') return 'info';
+      if (s === 'Delayed') return 'warning';
+      if (s === 'Canceled' || s === 'Cancelled' || s === 'Diverted') return 'danger';
+      return 'accent';
+    }
+
+    var app = document.getElementById('app');
+    var L = STR.en, LS = STATUS_LABEL.en;
+    var ctx = null, editing = false, timer = null, busy = false;
+
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); }
+    function el(html) { var d = document.createElement('div'); d.innerHTML = html; return d; }
+
+    function fmtTime(iso) {
+      if (!iso) return { time: '—', date: '' };
+      var m = String(iso).match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
+      if (!m) return { time: String(iso), date: '' };
+      return { time: m[4] + ':' + m[5], date: m[3] + '.' + m[2] };
+    }
+    function fmtAlt(a) {
+      if (a === 'ground' || a === null || a === undefined) return '—';
+      return Math.round(a).toLocaleString() + ' ft';
+    }
+
+    function resize() { if (window.trek && window.trek.resize) { /* kit auto-reports height */ } }
+
+    function render(data) {
+      app.innerHTML = '';
+      if (!ctx || !ctx.reservationId) { app.appendChild(el('<p class="ft-empty">' + esc(L.noflight) + '</p>')); return; }
+      if (!data) { app.appendChild(el('<p class="ft-empty">' + esc(L.loading) + '</p>')); return; }
+
+      // --- no flight number: prompt to link one ---
+      if (!data.flightNumber) {
+        var wrap = el(
+          '<div><p class="ft-empty">' + esc(L.noflight) + '</p>' +
+          '<div class="ft-editrow"><input class="trek-input" id="ft-in" placeholder="' + esc(L.enter) + '" />' +
+          '<button class="trek-btn trek-btn--primary" id="ft-save">' + esc(L.link) + '</button></div>' +
+          (data.hasKey ? '' : '<p class="ft-hint">' + esc(L.callsignhint) + '</p>') +
+          '</div>');
+        app.appendChild(wrap);
+        bindSave();
+        return;
+      }
+
+      var s = data.status, live = data.live;
+      var head = '<div class="ft-head">' + SVG.plane +
+        '<span class="ft-flight">' + esc((s && s.number) || withSpace(data.flightNumber)) + '</span>' +
+        (s && s.airline ? '<span class="ft-air">' + esc(s.airline) + '</span>' : '') +
+        (s ? '<span class="trek-chip trek-chip--' + statusVariant(s.status) + '" style="margin-left:auto">' + esc(LS[s.status] || s.status) + '</span>' : '') +
+        '</div>';
+      var html = head;
+
+      if (s) {
+        html += '<div class="ft-route">' +
+          '<div class="ft-ap dep"><div class="ft-iata">' + esc(s.departure.iata || '—') + '</div>' +
+          '<div class="ft-apname">' + esc(s.departure.name || '') + '</div></div>' +
+          '<div class="ft-arrow">' + SVG.arrow + '</div>' +
+          '<div class="ft-ap arr"><div class="ft-iata">' + esc(s.arrival.iata || '—') + '</div>' +
+          '<div class="ft-apname">' + esc(s.arrival.name || '') + '</div></div></div>';
+
+        html += '<div class="ft-times">' + timeCol(L.dep, s.departure, null, false) +
+          timeCol(L.arr, s.arrival, s.delayMin, true) + '</div>';
+
+        var meta = [];
+        if (s.departure.terminal) meta.push(pill(L.terminal + ' ' + s.departure.iata, s.departure.terminal));
+        if (s.departure.gate) meta.push(pill(L.gate, s.departure.gate));
+        if (s.arrival.terminal) meta.push(pill(L.terminal + ' ' + s.arrival.iata, s.arrival.terminal));
+        if (s.arrival.gate) meta.push(pill(L.gate + ' ' + s.arrival.iata, s.arrival.gate));
+        if (s.arrival.baggageBelt) meta.push(pill(L.belt, s.arrival.baggageBelt));
+        if (meta.length) html += '<div class="ft-meta">' + meta.join('') + '</div>';
+      } else {
+        html += '<p class="ft-hint">' + esc(L.nostatus) + '</p>';
+        if (!data.hasKey) html += '<p class="ft-hint">' + esc(L.keyhint) + '</p>';
+      }
+
+      // --- live airborne block ---
+      if (live && live.lat != null && !live.onGround) {
+        var vr = live.verticalRate;
+        var trend = vr != null && vr > 64 ? SVG.up : (vr != null && vr < -64 ? SVG.down : '');
+        html += '<div class="ft-live"><div class="ft-live-head"><span class="ft-dot pulse"></span>' + esc(L.inair) +
+          (live.desc || live.type ? ' · ' + esc(live.desc || live.type) : '') + '</div>' +
+          '<div class="ft-grid">' +
+          stat(L.alt, fmtAlt(live.altBaro) + (trend ? ' ' + trend : '')) +
+          stat(L.spd, live.groundSpeed != null ? Math.round(live.groundSpeed) + ' kt' : '—') +
+          stat(L.ac, esc(live.reg || live.type || '—')) +
+          '</div>';
+        if (live.hex) {
+          html += '<div class="ft-linkline"><a href="#" id="ft-map">' + SVG.map + ' ' + esc(L.openmap) + '</a> · ' +
+            esc(fmtCoord(live.lat, live.lon)) + '</div>';
+        }
+        html += '</div>';
+      } else if (live && live.onGround) {
+        html += '<div class="ft-live"><div class="ft-live-head"><span class="ft-dot" style="background:var(--text-faint)"></span>' + esc(L.onground) + '</div></div>';
+      }
+
+      // --- footer / edit ---
+      if (editing) {
+        html += '<div class="ft-editrow"><input class="trek-input" id="ft-in" value="' + esc(withSpace(data.flightNumber)) + '" placeholder="' + esc(L.enter) + '" />' +
+          '<button class="trek-btn trek-btn--primary" id="ft-save">' + esc(L.save) + '</button></div>';
+      }
+      html += '<div class="ft-foot"><span class="ft-updated">' + esc(L.updated) + ' ' + relTime(data.updatedAt) + '</span>' +
+        '<span class="ft-actions">' +
+        '<button class="ft-iconbtn" id="ft-edit" title="' + esc(L.change) + '">' + SVG.edit + '</button>' +
+        '<button class="ft-iconbtn" id="ft-refresh" title="' + esc(L.refresh) + '">' + SVG.refresh + '</button>' +
+        '</span></div>';
+
+      if (data.errors && data.errors.length) html += '<div class="ft-err">' + esc(data.errors.join(' · ')) + '</div>';
+
+      app.appendChild(el(html));
+      bindSave();
+      var e = document.getElementById('ft-edit'); if (e) e.addEventListener('click', function () { editing = !editing; render(last); });
+      var r = document.getElementById('ft-refresh'); if (r) r.addEventListener('click', function () { doRefresh(r); });
+      var mp = document.getElementById('ft-map'); if (mp && live && live.hex) mp.addEventListener('click', function (ev) {
+        ev.preventDefault(); window.trek.openExternal('https://globe.adsb.fi/?icao=' + encodeURIComponent(live.hex));
+      });
+      resize();
+    }
+
+    function withSpace(n) { var m = String(n || '').match(/^([A-Z]{2,3})(\d.*)$/); return m ? m[1] + ' ' + m[2] : n; }
+    function fmtCoord(la, lo) { return la.toFixed(3) + ', ' + lo.toFixed(3); }
+    function pill(k, v) { return '<span class="ft-pill">' + esc(k) + ' <b>' + esc(v) + '</b></span>'; }
+    function stat(k, v) { return '<div class="ft-stat"><div class="v">' + v + '</div><div class="k">' + esc(k) + '</div></div>'; }
+
+    function timeCol(label, block, delayMin, isArr) {
+      var sched = fmtTime(block.scheduled), rev = fmtTime(block.revised);
+      var changed = block.revised && block.revised !== block.scheduled && rev.time !== sched.time;
+      var cls = isArr ? 'arr' : 'dep';
+      var html = '<div class="' + cls + '"><div class="ft-t-label">' + esc(label) + (sched.date ? ' · ' + sched.date : '') + '</div>';
+      if (changed) {
+        var late = delayMin != null ? delayMin > 0 : true;
+        html += '<div class="ft-t-sched"><span class="ft-strike">' + esc(sched.time) + '</span> ' +
+          '<span class="ft-t-rev ' + (late ? 'late' : 'early') + '">' + esc(rev.time) + '</span></div>';
+      } else {
+        html += '<div class="ft-t-sched">' + esc(sched.time) + '</div>';
+      }
+      if (isArr && delayMin != null && delayMin !== 0) {
+        html += '<div class="ft-t-rev ' + (delayMin > 0 ? 'late' : 'early') + '">' +
+          (delayMin > 0 ? '+' + delayMin + ' min ' + esc(L.delayLate) : Math.abs(delayMin) + ' min ' + esc(L.delayEarly)) + '</div>';
+      } else if (isArr && delayMin === 0) {
+        html += '<div class="ft-t-rev">' + esc(L.ontime) + '</div>';
+      }
+      return html + '</div>';
+    }
+
+    function relTime(ts) {
+      if (!ts) return '';
+      var d = Math.round((Date.now() - ts) / 1000);
+      if (d < 60) return d + 's';
+      if (d < 3600) return Math.round(d / 60) + 'm';
+      return Math.round(d / 3600) + 'h';
+    }
+
+    var last = null;
+
+    function bindSave() {
+      var b = document.getElementById('ft-save'), i = document.getElementById('ft-in');
+      if (!b || !i) return;
+      var go = function () { saveNumber(i.value); };
+      b.addEventListener('click', go);
+      i.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+    }
+
+    async function saveNumber(val) {
+      if (busy) return; busy = true;
+      try {
+        var data = await window.trek.invoke('/set', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId, flightNumber: val } });
+        editing = false; last = data; render(data);
+      } catch (e) { window.trek.notify('error', e.message || 'error'); }
+      busy = false;
+    }
+
+    async function doRefresh(btn) {
+      if (busy) return; busy = true;
+      if (btn) btn.querySelector('svg').classList.add('ft-spin');
+      try {
+        var data = await window.trek.invoke('/refresh', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId } });
+        last = data; render(data);
+      } catch (e) { window.trek.notify('error', e.message || 'error'); }
+      busy = false;
+    }
+
+    async function load() {
+      if (!ctx || !ctx.reservationId) { render(null); return; }
+      try {
+        var data = await window.trek.invoke('/status?tripId=' + encodeURIComponent(ctx.tripId || '') + '&reservationId=' + encodeURIComponent(ctx.reservationId));
+        last = data; render(data);
+      } catch (e) {
+        app.innerHTML = '<p class="ft-err">' + esc(e.message || 'error') + '</p>';
+      }
+    }
+
+    function applyLocale(m) {
+      var de = (m.locale || '').toLowerCase().indexOf('de') === 0;
+      L = de ? STR.de : STR.en; LS = de ? STATUS_LABEL.de : STATUS_LABEL.en;
+    }
+
+    window.trek.onContext(function (m) {
+      var prevRid = ctx && ctx.reservationId;
+      ctx = m;
+      document.documentElement.dataset.theme = (m.theme === 'dark' || m.theme === 'light') ? m.theme :
+        (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      applyLocale(m);
+      if (m.reservationId !== prevRid) { editing = false; last = null; render(null); load(); }
+      else if (last) render(last);
+      if (!timer) timer = setInterval(load, 60000);
+    });
+  })();
+  </script>
+</body>
+</html>
