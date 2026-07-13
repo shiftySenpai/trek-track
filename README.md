@@ -28,7 +28,11 @@ actual aircraft position from the free **adsb.fi** open-data network.
   arrived, cancelled), plus terminal, gate and baggage belt.
 - **Live position in the air** (via adsb.fi): when the aircraft is transmitting
   ADS-B, it shows altitude, ground speed, climb/descent trend, registration and
-  aircraft type, and a one-tap link to open the plane on a live map.
+  aircraft type, a **progress read-out** (percent complete, time remaining,
+  distance to destination), and a **built-in minimap** that plots the route and
+  the aircraft on an embedded vector world map — no external map tiles, so it
+  works inside TREK's strict plugin sandbox. Plus a one-tap link to a full live
+  map.
 - **Future flights & no mix-ups.** Flight numbers repeat every day, so the
   lookup is pinned to the booking's **date**: AeroDataBox is queried for that
   exact day, and the live adsb.fi position is only fetched inside the flight's own

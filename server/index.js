@@ -176,7 +176,7 @@ async function fetchAero(number, key, date) {
   // avoids matching a different day's operation of the same number).
   const datePath = /^\d{4}-\d{2}-\d{2}$/.test(date || '') ? '/' + date : '';
   const url = AERO_HOST + '/flights/number/' + encodeURIComponent(number) + datePath +
-    '?withAircraftImage=false&withLocation=false&dateLocalRole=Both';
+    '?withAircraftImage=false&withLocation=true&dateLocalRole=Both';
   const r = await fetchJson(url, {
     headers: { 'x-rapidapi-key': key, 'x-rapidapi-host': 'aerodatabox.p.rapidapi.com' },
   });
@@ -234,6 +234,7 @@ function normaliseAero(f) {
 
 function airportBlock(block, times) {
   const ap = block.airport || {};
+  const loc = ap.location || {};
   return {
     iata: ap.iata || ap.icao || null,
     name: ap.shortName || ap.name || ap.municipalityName || null,
@@ -242,6 +243,8 @@ function airportBlock(block, times) {
     baggageBelt: block.baggageBelt || null,
     scheduled: times ? times.scheduled : null,
     revised: times ? times.revised : null,
+    lat: num(loc.lat != null ? loc.lat : loc.latitude),
+    lon: num(loc.lon != null ? loc.lon : loc.longitude),
   };
 }
 
