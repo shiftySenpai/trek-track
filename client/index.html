@@ -504,9 +504,12 @@
         liveHtml = '<p class="ft-hint">' + esc(L.nostatus) + '</p>';
       }
 
-      // the map is tied to the ROUTE (not the live fix), so it stays put during an
-      // ADS-B coverage gap; the plane dot returns when the signal does
-      var mapHtml = (depC && arrC && (airborne || hasFix)) ? drawMap(depC, arrC, planeC) : '';
+      // Show the map whenever we know the route (both airport coords) OR have a
+      // live fix — for scheduled, en-route, coverage-gap AND arrived flights alike.
+      // The plane dot only appears with a live fix. Guarded so a map error can
+      // never blank the rest of the widget.
+      var mapHtml = '';
+      try { if ((depC && arrC) || hasFix) mapHtml = drawMap(depC, arrC, planeC); } catch (e) { mapHtml = ''; }
       var linkHtml = '';
       if (hasFix && live.hex) { var mi = mapLinks.length; mapLinks.push(live.hex); linkHtml = '<div class="ft-maplink"><a href="#" data-map="' + mi + '">' + svg('map') + esc(L.openmap) + '</a> <span class="co">· ' + esc(fmtCoord(live.lat, live.lon)) + '</span></div>'; }
 
