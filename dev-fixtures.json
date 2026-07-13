@@ -1,0 +1,18 @@
+{
+  "config": {},
+  "trips": {
+    "1": {
+      "members": [1],
+      "data": { "id": 1, "title": "Test Trip" },
+      "reservations": [
+        { "id": 55, "type": "flight", "status": "confirmed", "title": "Austrian 254 (far future)",
+          "reservation_time": "2026-09-15T10:00:00", "reservation_end_time": "2026-09-15T12:00:00",
+          "metadata": "{\"airline\":\"Austrian Airlines\",\"flight_number\":\"254\",\"departure_airport\":\"HAM\",\"arrival_airport\":\"KLU\"}" },
+        { "id": 60, "type": "flight", "status": "confirmed", "title": "Austrian 110 (today)",
+          "reservation_time": "2026-07-13T20:00:00", "reservation_end_time": "2026-07-13T23:00:00",
+          "metadata": "{\"airline\":\"Austrian Airlines\",\"flight_number\":\"110\",\"departure_airport\":\"KLU\",\"arrival_airport\":\"VIE\"}" }
+      ]
+    }
+  },
+  "users": {}
+}

@@ -1,0 +1,47 @@
+{
+  "id": "flight-tracker",
+  "name": "Flight Tracker",
+  "version": "1.5.1",
+  "apiVersion": 1,
+  "author": "fbnlrz",
+  "description": "Live flight status, schedule and airborne position for a flight reservation, from AeroDataBox and adsb.fi.",
+  "homepage": "https://github.com/fbnlrz/trek-track",
+  "license": "MIT",
+  "icon": "Plane",
+  "type": "widget",
+  "trek": ">=3.3.0 <4.0.0",
+  "nativeModules": false,
+  "permissions": [
+    "db:own",
+    "db:read:trips",
+    "db:meta",
+    "notify:send",
+    "hook:trip-warning-provider",
+    "http:outbound",
+    "http:outbound:aerodatabox.p.rapidapi.com",
+    "http:outbound:opendata.adsb.fi"
+  ],
+  "egress": [
+    "aerodatabox.p.rapidapi.com",
+    "opendata.adsb.fi"
+  ],
+  "requiredAddons": [],
+  "pluginDependencies": [],
+  "capabilities": {
+    "widget": {
+      "title": "Flight Tracker",
+      "slot": "reservation-detail"
+    }
+  },
+  "settings": [
+    {
+      "key": "aerodatabox_key",
+      "label": "AeroDataBox RapidAPI key",
+      "input_type": "password",
+      "scope": "instance",
+      "required": false,
+      "secret": true,
+      "hint": "Instance-wide, set once by an admin (Admin -> Plugins) for all users. Get a free key at rapidapi.com/aedbx-aedbx/api/aerodatabox. Without it, only live position from adsb.fi is shown."
+    }
+  ]
+}
