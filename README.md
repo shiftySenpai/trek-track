@@ -70,6 +70,7 @@ with altitude and speed.
 | `db:read:trips` | Reads the reservation to auto-detect its flight number. |
 | `db:meta` | Best-effort mirror of the chosen flight number onto the reservation so other TREK surfaces can read it. |
 | `notify:send` | Sends a bell/email notification to you (only) when a tracked flight's delay, gate or status changes while TREK is open. |
+| `weather:read` | Shows the destination weather for the arrival day (host-cached forecast broker). |
 | `hook:trip-warning-provider` | Shows delayed/cancelled flights as native trip warnings in the planner. |
 | `http:outbound` | Marks the plugin as making outbound HTTP calls. |
 | `http:outbound:aerodatabox.p.rapidapi.com` | Fetches flight schedule, status, gate and delay data from AeroDataBox. |

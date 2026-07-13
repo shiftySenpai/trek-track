@@ -295,7 +295,7 @@ function normaliseLive(ac) {
 // Fetch status + live for one resolved leg. `win` gates the two calls:
 //   win.status → query AeroDataBox (near enough departure to have data)
 //   win.live   → query adsb.fi (flight plausibly airborne right now)
-async function trackLeg(leg, key, win) {
+async function trackLeg(ctx, leg, key, win) {
   const errors = [];
   let status = null;
   if (win.status) {
@@ -320,7 +320,23 @@ async function trackLeg(leg, key, win) {
     });
     if (live.error) errors.push('live: ' + live.error);
   }
-  return Object.assign({}, leg, { status, live: live.data, errors });
+  // Destination weather at the arrival airport for the arrival day (host-cached,
+  // free/tenant-free broker). Skipped once the flight is in the past.
+  let weather = null;
+  const arr = status && status.arrival;
+  if (arr && arr.lat != null && arr.lon != null && win.status) {
+    const wdate = (typeof arr.scheduled === 'string' ? arr.scheduled.slice(0, 10) : '') || win.date || null;
+    const w = await attempt(() => ctx.weather.get(arr.lat, arr.lon, /^\d{4}-\d{2}-\d{2}$/.test(wdate || '') ? wdate : undefined), null);
+    if (w && typeof w === 'object' && !w.error && typeof w.temp === 'number') {
+      weather = {
+        temp: Math.round(w.temp), main: w.main || null, description: w.description || null,
+        tempMax: typeof w.temp_max === 'number' ? Math.round(w.temp_max) : null,
+        tempMin: typeof w.temp_min === 'number' ? Math.round(w.temp_min) : null,
+        precipProb: typeof w.precipitation_probability_max === 'number' ? Math.round(w.precipitation_probability_max) : null,
+      };
+    }
+  }
+  return Object.assign({}, leg, { status, live: live.data, weather, errors });
 }
 
 // --- key resolution: instance-wide setting (admin) > in-widget stored key ---
@@ -417,7 +433,7 @@ async function buildPayload(ctx, tripId, reservationId, forcedNumber) {
   const legs = [];
   for (const l of queryable) {
     const win = { status: statusWin, live: liveWin, date: legDate(l) };
-    const tracked = await attempt(() => trackLeg(l, key, win), Object.assign({}, l, { status: null, live: null, errors: ['failed'] }));
+    const tracked = await attempt(() => trackLeg(ctx, l, key, win), Object.assign({}, l, { status: null, live: null, errors: ['failed'] }));
     legs.push(tracked);
   }
 

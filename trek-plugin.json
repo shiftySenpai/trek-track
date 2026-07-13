@@ -1,7 +1,7 @@
 {
   "id": "flight-tracker",
   "name": "Flight Tracker",
-  "version": "1.5.1",
+  "version": "1.6.0",
   "apiVersion": 1,
   "author": "fbnlrz",
   "description": "Live flight status, schedule and airborne position for a flight reservation, from AeroDataBox and adsb.fi.",
@@ -16,6 +16,7 @@
     "db:read:trips",
     "db:meta",
     "notify:send",
+    "weather:read",
     "hook:trip-warning-provider",
     "http:outbound",
     "http:outbound:aerodatabox.p.rapidapi.com",
