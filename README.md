@@ -22,10 +22,18 @@ actual aircraft position from the free **adsb.fi** open-data network.
 - **Live position in the air** (via adsb.fi): when the aircraft is transmitting
   ADS-B, it shows altitude, ground speed, climb/descent trend, registration and
   aircraft type, and a one-tap link to open the plane on a live map.
-- **Works with or without an API key.** Enter the AeroDataBox key on your plugin
-  settings page or paste it directly in the widget. Without a key you still get
-  the free adsb.fi live position. Results are cached briefly so the public rate
-  limits are respected.
+- **Future flights & no mix-ups.** Flight numbers repeat every day, so the
+  lookup is pinned to the booking's **date**: AeroDataBox is queried for that
+  exact day, and the live adsb.fi position is only fetched inside the flight's own
+  time window and matched by the unique aircraft registration (with a key) or the
+  ATC call sign — never a same-number flight on another day. Schedule, gate and
+  delay are shown **on the ground** from ~48 h before departure; far-future
+  flights show a countdown plus the booked route/times and light up
+  automatically as departure approaches.
+- **Works with or without an API key.** The AeroDataBox key is **instance-wide**:
+  an admin sets it once (Admin → Plugins) for all users, or you paste it into the
+  widget. Without a key you still get the free adsb.fi live position. Results are
+  cached briefly so the public rate limits are respected.
 - **Stays out of the way** on non-flight reservations (trains, hotels, …).
 - Native TREK look in both light and dark themes, German and English.
 
@@ -51,11 +59,11 @@ with altitude and speed.
 
 1. Install and activate the plugin, then approve its permissions.
 2. **Optional but recommended:** get a free AeroDataBox key at
-   `rapidapi.com/aedbx-aedbx/api/aerodatabox` and add it either on your
-   **per-user plugin settings page** (the `aerodatabox_key` field) or by pasting
-   it straight into the widget's "Add AeroDataBox key" box. This unlocks the
-   schedule, gate and delay data. Without a key, only the live adsb.fi position
-   is shown.
+   `rapidapi.com/aedbx-aedbx/api/aerodatabox` and add it **instance-wide** — an
+   admin sets the `aerodatabox_key` field under **Admin → Plugins** (applies to
+   all users), or paste it into the widget's "Add AeroDataBox key" box. This
+   unlocks the schedule, gate and delay data. Without a key, only the live
+   adsb.fi position is shown.
 3. Open a trip, expand a flight reservation, and the tracker appears beneath it.
    The flight number(s) are detected from the booking; if not, type once to save.
 

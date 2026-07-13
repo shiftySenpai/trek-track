@@ -93,6 +93,18 @@ function parseMeta(r) {
   return (m && typeof m === 'object') ? m : {};
 }
 
+// Parse a reservation datetime ('YYYY-MM-DDTHH:MM' or with a space) into an
+// epoch-ms estimate and the local date string used for the AeroDataBox query.
+function parseDateTime(s) {
+  if (!s || typeof s !== 'string') return null;
+  const m = s.match(/(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
+  if (!m) return null;
+  const iso = m[4] ? (m[1] + '-' + m[2] + '-' + m[3] + 'T' + m[4] + ':' + m[5] + ':00')
+    : (m[1] + '-' + m[2] + '-' + m[3] + 'T12:00:00');
+  const ms = Date.parse(iso);
+  return { ms: isNaN(ms) ? null : ms, date: m[1] + '-' + m[2] + '-' + m[3] };
+}
+
 // Ordered endpoints (from -> stops -> to), by `sequence`.
 function orderedEndpoints(r) {
   if (!Array.isArray(r.endpoints)) return [];
@@ -143,9 +155,12 @@ function resolveLeg(leg) {
 
 // --- external data sources ---------------------------------------------------
 
-async function fetchAero(number, key) {
+async function fetchAero(number, key, date) {
   if (!key || !number) return { data: null, error: null };
-  const url = AERO_HOST + '/flights/number/' + encodeURIComponent(number) +
+  // With a booking date we query the exact day (accurate for future flights and
+  // avoids matching a different day's operation of the same number).
+  const datePath = /^\d{4}-\d{2}-\d{2}$/.test(date || '') ? '/' + date : '';
+  const url = AERO_HOST + '/flights/number/' + encodeURIComponent(number) + datePath +
     '?withAircraftImage=false&withLocation=false&dateLocalRole=Both';
   const r = await fetchJson(url, {
     headers: { 'x-rapidapi-key': key, 'x-rapidapi-host': 'aerodatabox.p.rapidapi.com' },
@@ -254,27 +269,41 @@ function normaliseLive(ac) {
   };
 }
 
-// Fetch status + live for one resolved leg.
-async function trackLeg(leg, key) {
+// Fetch status + live for one resolved leg. `win` gates the two calls:
+//   win.status → query AeroDataBox (near enough departure to have data)
+//   win.live   → query adsb.fi (flight plausibly airborne right now)
+async function trackLeg(leg, key, win) {
   const errors = [];
-  const aero = await fetchAero(leg.number, key);
-  if (aero.error) errors.push('status: ' + aero.error);
-  const status = aero.data;
-  const live = await fetchLive({
-    reg: status && status.aircraftReg,
-    callSign: status && status.callSign,
-    callsignHint: leg.callsign,
-    number: leg.number,
-  });
-  if (live.error) errors.push('live: ' + live.error);
+  let status = null;
+  if (win.status) {
+    const aero = await fetchAero(leg.number, key, win.date);
+    if (aero.error) errors.push('status: ' + aero.error);
+    status = aero.data;
+  }
+  let live = { data: null };
+  // Anti-mix-up (NOT "airborne only"): the correct-DAY guarantee comes from the
+  // date-pinned status and the time window, not from requiring the plane to be up.
+  // Within the window we resolve by the exact aircraft registration when a key gave
+  // us one (unique tail) and otherwise by the ATC call sign (only broadcast by this
+  // very flight). ADS-B simply has no position until the aircraft is powered up on
+  // the apron — but the schedule/gate/delay below is always shown on the ground.
+  if (win.live) {
+    live = await fetchLive({
+      reg: status && status.aircraftReg,
+      callSign: status && status.callSign,
+      callsignHint: leg.callsign,
+      number: leg.number,
+    });
+    if (live.error) errors.push('live: ' + live.error);
+  }
   return Object.assign({}, leg, { status, live: live.data, errors });
 }
 
-// --- key resolution: user setting > instance config > in-widget stored key ---
+// --- key resolution: instance-wide setting (admin) > in-widget stored key ---
+// Both are instance-wide (shared by all users): ctx.config is the admin's
+// Admin -> Plugins setting; the kv row is what the in-widget field writes.
 
 async function getKey(ctx) {
-  const u = await attempt(() => ctx.settings.get('aerodatabox_key'), null);
-  if (u) return String(u);
   if (ctx.config && ctx.config.aerodatabox_key) return String(ctx.config.aerodatabox_key);
   const rows = await attempt(() => ctx.db.query("SELECT v FROM kv WHERE k = 'aerodatabox_key'"), []);
   if (rows && rows[0] && rows[0].v) return String(rows[0].v);
@@ -304,32 +333,51 @@ async function buildPayload(ctx, tripId, reservationId, forcedNumber) {
 
   const resv = tripId ? await readReservation(ctx, tripId, reservationId) : null;
   const bookingType = resv ? (resv.type || parseMeta(resv).type || null) : null;
-  const booking = { type: bookingType };
+
+  // Departure/arrival datetimes drive the countdown and the fetch windows.
+  const H = 3600 * 1000;
+  const dep = parseDateTime(resv && resv.reservation_time);
+  const arr = parseDateTime(resv && resv.reservation_end_time);
+  const now = Date.now();
+  const depMs = dep && dep.ms;
+  const arrMs = (arr && arr.ms) || (depMs ? depMs + 6 * H : null);
+  const baseDate = dep && dep.date;
+
+  // phase: upcoming (>48h out) | active (within window) | past
+  let phase = 'active';
+  if (depMs && now < depMs - 48 * H) phase = 'upcoming';
+  else if (arrMs && now > arrMs + 6 * H) phase = 'past';
+
+  // AeroDataBox status: from 48h before departure until 6h after arrival
+  // (or best-effort if we don't know the date). Saves quota on far-future flights.
+  const statusWin = !depMs ? true : (now >= depMs - 48 * H && now <= arrMs + 6 * H);
+  // adsb.fi live position: only while the aircraft is plausibly airborne — 1h
+  // before departure to 2h after arrival. Prevents matching another day's flight.
+  const liveWin = !depMs ? true : (now >= depMs - 1 * H && now <= arrMs + 2 * H);
+  const win = { status: statusWin, live: liveWin, date: baseDate };
+
+  const booking = { type: bookingType, depMs: depMs || null, arrMs: arrMs || null, phase };
 
   let rawLegs;
   if (overrideNumber) {
-    const sf = splitFlight(overrideNumber);
     rawLegs = [resolveLeg({ flight: overrideNumber, airline: null, from: null, to: null })];
-    // keep number as typed even if it had no prefix
     if (rawLegs[0] && !rawLegs[0].number) rawLegs[0].number = overrideNumber;
   } else {
     rawLegs = resv ? getFlightLegs(resv).map(resolveLeg) : [];
     if (rawLegs.length) source = 'detected';
   }
 
-  // Only legs we can actually query.
   const queryable = rawLegs.filter((l) => l.number);
 
   if (!queryable.length) {
     const applicable = !bookingType || bookingType === 'flight';
     return { applicable, source: 'none', hasKey, legs: [], booking,
-      // surface any detected-but-unqueryable legs so the UI can hint
       hint: rawLegs.length ? rawLegs.map((l) => ({ airline: l.airline, from: l.from, to: l.to, rawFlight: l.rawFlight })) : null,
       updatedAt: Date.now() };
   }
 
   // Track each leg (parallel; cache dedups repeat load).
-  const legs = await Promise.all(queryable.map((l) => attempt(() => trackLeg(l, key), Object.assign({}, l, { status: null, live: null, errors: ['failed'] }))));
+  const legs = await Promise.all(queryable.map((l) => attempt(() => trackLeg(l, key, win), Object.assign({}, l, { status: null, live: null, errors: ['failed'] }))));
 
   return { applicable: true, source, hasKey, legs, booking, updatedAt: Date.now() };
 }

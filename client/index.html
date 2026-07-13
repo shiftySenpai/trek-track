@@ -55,6 +55,10 @@
     .ft-keytoggle:hover { color: var(--text-secondary); }
     .ft-divider { height: 1px; background: var(--border-faint); margin: 10px 0; }
     .ft-sep { height: 1px; background: var(--border-faint); margin: 10px 0; }
+    .ft-countdown { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding: 8px 12px; border-radius: 10px; background: var(--bg-hover); font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+    .ft-countdown b { color: var(--text-primary); }
+    .ft-countdown svg { color: var(--text-muted); }
+    .ft-soon { font-size: 11px; color: var(--text-faint); margin-top: 6px; }
     @media (prefers-reduced-motion: no-preference) {
       .ft-dot.pulse { animation: ftpulse 2s ease-out infinite; }
       @keyframes ftpulse { 0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.5); } 70% { box-shadow: 0 0 0 6px rgba(34,197,94,0); } 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); } }
@@ -87,7 +91,9 @@
         ontime: 'On time', layover: 'Layover', nostatus: 'No live schedule right now.',
         keyhint: 'Add an AeroDataBox key for schedule, gate and delay data.',
         keyadd: 'Add AeroDataBox key', keyph: 'Paste RapidAPI key', keysaved: 'Key saved',
-        detected: 'Detected from booking', couldnt: "Couldn't build a flight number automatically — enter it:" },
+        detected: 'Detected from booking', couldnt: "Couldn't build a flight number automatically — enter it:",
+        departsIn: 'Departs in', departed: 'Departed', soon: 'Live status appears ~48 h before departure.',
+        day: 'day', days: 'days' },
       de: { loading: 'Flug wird geladen…', noflight: 'Keine Flugnummer mit dieser Buchung verknüpft.',
         link: 'Verknüpfen', enter: 'Flugnr. (z.B. LH400)', save: 'Speichern', change: 'Flugnummer ändern',
         dep: 'Abflug', arr: 'Ankunft', terminal: 'Terminal', gate: 'Gate', belt: 'Band',
@@ -96,7 +102,9 @@
         ontime: 'Pünktlich', layover: 'Umstieg', nostatus: 'Aktuell kein Live-Fahrplan.',
         keyhint: 'AeroDataBox-Key ergänzen für Fahrplan, Gate und Verspätung.',
         keyadd: 'AeroDataBox-Key hinzufügen', keyph: 'RapidAPI-Key einfügen', keysaved: 'Key gespeichert',
-        detected: 'Aus Buchung erkannt', couldnt: 'Flugnummer konnte nicht automatisch gebildet werden — bitte eingeben:' }
+        detected: 'Aus Buchung erkannt', couldnt: 'Flugnummer konnte nicht automatisch gebildet werden — bitte eingeben:',
+        departsIn: 'Abflug in', departed: 'Gestartet', soon: 'Live-Status erscheint ~48 h vor Abflug.',
+        day: 'Tag', days: 'Tage' }
     };
 
     var STATUS_LABEL = {
@@ -118,7 +126,18 @@
 
     var app = document.getElementById('app');
     var L = STR.en, LS = STATUS_LABEL.en;
-    var ctx = null, editing = false, keyOpen = false, timer = null, busy = false, last = null;
+    var ctx = null, editing = false, keyOpen = false, timer = null, busy = false, last = null, currentPhase = 'active';
+
+    function fmtCountdown(depMs) {
+      var d = depMs - Date.now();
+      if (d <= 0) return null;
+      var days = Math.floor(d / 86400000);
+      var hrs = Math.floor((d % 86400000) / 3600000);
+      var mins = Math.floor((d % 3600000) / 60000);
+      if (days >= 1) return days + ' ' + (days === 1 ? L.day : L.days) + (hrs ? ' ' + hrs + 'h' : '');
+      if (hrs >= 1) return hrs + 'h ' + mins + 'm';
+      return mins + ' min';
+    }
 
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); }
     function el(html) { var d = document.createElement('div'); d.innerHTML = html; return d; }
@@ -208,8 +227,10 @@
         html += '</div>';
       } else if (live && live.onGround) {
         html += '<div class="ft-live"><div class="ft-live-head"><span class="ft-dot" style="background:var(--text-faint)"></span>' + esc(L.onground) + '</div></div>';
-      } else if (!s) {
+      } else if (!s && currentPhase === 'active') {
         html += '<p class="ft-hint">' + esc(L.nostatus) + '</p>';
+      } else if (!s && currentPhase === 'upcoming') {
+        html += '<p class="ft-soon">' + esc(L.soon) + '</p>';
       }
       html += '</div>';
       return html;
@@ -235,8 +256,15 @@
       if (!data) { app.appendChild(el('<p class="ft-empty">' + esc(L.loading) + '</p>')); return; }
       if (data.applicable === false) { resize(); return; } // stay out of the way on non-flights
 
+      currentPhase = (data.booking && data.booking.phase) || 'active';
       var html = '';
       var legs = data.legs || [];
+
+      // Countdown banner for upcoming flights.
+      if (data.booking && data.booking.depMs && data.booking.phase !== 'past') {
+        var cd = fmtCountdown(data.booking.depMs);
+        if (cd) html += '<div class="ft-countdown">' + SVG.plane + '<span>' + esc(L.departsIn) + ' <b>' + esc(cd) + '</b></span></div>';
+      }
 
       if (legs.length) {
         for (var i = 0; i < legs.length; i++) {
