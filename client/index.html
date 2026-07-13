@@ -6,20 +6,20 @@
   <title>Flight Tracker</title>
   <!-- trek:ui -->
   <style>
-    :root { color-scheme: light; }
-    :root[data-theme="dark"] { color-scheme: dark; }
-    @media (prefers-color-scheme: dark) { :root:not([data-theme]) { color-scheme: dark; } }
+    :root { color-scheme: light; --ft-surface: rgba(0,0,0,.045); --ft-surface-line: rgba(0,0,0,.07); }
+    :root[data-theme="dark"] { color-scheme: dark; --ft-surface: rgba(0,0,0,.32); --ft-surface-line: rgba(255,255,255,.06); }
+    @media (prefers-color-scheme: dark) { :root:not([data-theme]) { color-scheme: dark; --ft-surface: rgba(0,0,0,.32); --ft-surface-line: rgba(255,255,255,.06); } }
     body { margin: 0; }
     #app { padding: 2px; font-variant-numeric: tabular-nums; }
     svg { flex-shrink: 0; }
     .ft-icon { width: 1em; height: 1em; vertical-align: -0.125em; }
 
-    /* filled panels that echo TREK's reservation-card field boxes */
-    .ft-panel { background: var(--bg-hover, rgba(0,0,0,.04)); border-radius: var(--radius-md, 12px); padding: 12px 14px; }
+    /* filled panels that echo TREK's reservation-card field boxes (darker than the card) */
+    .ft-panel { background: var(--ft-surface); border: 1px solid var(--ft-surface-line); border-radius: var(--radius-md, 12px); padding: 12px 14px; }
     .ft-panel + .ft-panel { margin-top: 8px; }
 
     /* total-route header */
-    .ft-journey { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 10px 14px; border-radius: var(--radius-md,12px); background: var(--bg-hover, rgba(0,0,0,.04)); }
+    .ft-journey { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 10px 14px; border-radius: var(--radius-md,12px); background: var(--ft-surface); border: 1px solid var(--ft-surface-line); }
     .ft-journey .rt { font-size: 15px; font-weight: 700; letter-spacing: .3px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
     .ft-journey .sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
     .ft-journey .spacer { flex: 1; }
@@ -98,7 +98,7 @@
     .ft-layover.broken .ln { background: var(--danger,#dc2626); }
 
     /* collapsed completed leg */
-    .ft-collapsed { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 12px; color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-md,12px); background: var(--bg-hover, rgba(0,0,0,.03)); }
+    .ft-collapsed { display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-size: 12px; color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-md,12px); background: var(--ft-surface); border: 1px solid var(--ft-surface-line); }
     .ft-collapsed:hover { background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
     .ft-collapsed .ft-icon { color: var(--success,#16a34a); }
     .ft-collapsed .grow { flex: 1; }

@@ -301,13 +301,14 @@ async function trackLeg(leg, key, win) {
     status = aero.data;
   }
   let live = { data: null };
-  // Anti-mix-up (NOT "airborne only"): the correct-DAY guarantee comes from the
-  // date-pinned status and the time window, not from requiring the plane to be up.
-  // Within the window we resolve by the exact aircraft registration when a key gave
-  // us one (unique tail) and otherwise by the ATC call sign (only broadcast by this
-  // very flight). ADS-B simply has no position until the aircraft is powered up on
-  // the apron — but the schedule/gate/delay below is always shown on the ground.
-  if (win.live) {
+  // Fetch the live position when the flight is plausibly up: inside the booking's
+  // time window, OR whenever the date-pinned status itself says the flight is
+  // airborne (then the aircraft is unambiguously this flight, so we can show it
+  // even if the booking's clock times were rough). The correct-DAY guarantee
+  // comes from the date-pinned status, not from requiring the plane to be up.
+  const AIRBORNE = { EnRoute: 1, Departed: 1, Approaching: 1 };
+  const wantLive = win.live || (status && AIRBORNE[status.status]);
+  if (wantLive) {
     live = await fetchLive({
       reg: status && status.aircraftReg,
       callSign: status && status.callSign,
