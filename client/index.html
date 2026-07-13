@@ -8,406 +8,533 @@
   <style>
     :root { color-scheme: light; }
     :root[data-theme="dark"] { color-scheme: dark; }
+    @media (prefers-color-scheme: dark) { :root:not([data-theme]) { color-scheme: dark; } }
     body { margin: 0; }
-    #app { padding: 4px 2px; font-variant-numeric: tabular-nums; }
-    svg { width: 1em; height: 1em; flex-shrink: 0; vertical-align: -0.125em; }
-    .ft-leg + .ft-leg { margin-top: 4px; }
-    .ft-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-    .ft-flight { font-size: 15px; font-weight: 700; letter-spacing: 0.2px; }
+    #app { padding: 2px; font-variant-numeric: tabular-nums; }
+    svg { flex-shrink: 0; }
+    .ft-icon { width: 1em; height: 1em; vertical-align: -0.125em; }
+
+    /* filled panels that echo TREK's reservation-card field boxes */
+    .ft-panel { background: var(--bg-hover, rgba(0,0,0,.04)); border-radius: var(--radius-md, 12px); padding: 12px 14px; }
+    .ft-panel + .ft-panel { margin-top: 8px; }
+
+    /* total-route header */
+    .ft-journey { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; padding: 10px 14px; border-radius: var(--radius-md,12px); background: var(--bg-hover, rgba(0,0,0,.04)); }
+    .ft-journey .rt { font-size: 15px; font-weight: 700; letter-spacing: .3px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .ft-journey .sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .ft-journey .spacer { flex: 1; }
+
+    /* countdown */
+    .ft-countdown { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding: 9px 13px; border-radius: var(--radius-md,12px); background: color-mix(in srgb, var(--accent, #3b82f6) 12%, transparent); color: var(--text-secondary); font-size: 13px; font-weight: 600; }
+    .ft-countdown b { color: var(--text-primary); }
+    .ft-countdown .ft-icon { color: var(--accent, #3b82f6); }
+
+    /* cancelled banner */
+    .ft-banner { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding: 10px 13px; border-radius: var(--radius-md,12px); background: color-mix(in srgb, var(--danger,#dc2626) 14%, transparent); color: var(--danger,#dc2626); font-weight: 600; font-size: 13px; }
+
+    .ft-leg { position: relative; }
+    .ft-leg + .ft-layover, .ft-layover + .ft-leg { margin-top: 8px; }
+    .ft-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+    .ft-seq { font-size: 10px; font-weight: 700; color: var(--text-faint); border: 1px solid var(--border-faint); border-radius: 5px; padding: 1px 5px; }
+    .ft-flight { font-size: 15px; font-weight: 700; letter-spacing: .2px; }
     .ft-air { color: var(--text-muted); font-size: 12px; }
-    .ft-route { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; margin: 8px 0 2px; }
+
+    /* status chip with glyph */
+    .ft-chip { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; }
+    .ft-chip .ft-icon { width: 12px; height: 12px; }
+    .ft-chip.s-success { color: var(--success,#16a34a); background: color-mix(in srgb, var(--success,#16a34a) 15%, transparent); }
+    .ft-chip.s-info    { color: var(--info,#2563eb);    background: color-mix(in srgb, var(--info,#2563eb) 15%, transparent); }
+    .ft-chip.s-warning { color: var(--warning,#d97706); background: color-mix(in srgb, var(--warning,#d97706) 16%, transparent); }
+    .ft-chip.s-danger  { color: var(--danger,#dc2626);  background: color-mix(in srgb, var(--danger,#dc2626) 15%, transparent); }
+    .ft-chip.s-muted   { color: var(--text-muted); background: var(--bg-hover, rgba(0,0,0,.05)); }
+
+    .ft-route { display: grid; grid-template-columns: 1fr 40px 1fr; align-items: start; gap: 6px; }
     .ft-ap { min-width: 0; }
     .ft-ap.arr { text-align: right; }
-    .ft-iata { font-size: 17px; font-weight: 700; line-height: 1.1; }
+    .ft-iata { font-size: 18px; font-weight: 700; line-height: 1.05; }
     .ft-apname { color: var(--text-muted); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .ft-arrow { color: var(--text-faint); display: flex; align-items: center; }
-    .ft-times { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+    .ft-arrow { color: var(--text-faint); display: flex; justify-content: center; padding-top: 3px; }
+
+    .ft-times { display: grid; grid-template-columns: 1fr 40px 1fr; gap: 6px; margin-top: 8px; }
     .ft-times .arr { text-align: right; }
-    .ft-t-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-faint); }
-    .ft-t-sched { font-size: 14px; font-weight: 600; }
-    .ft-t-rev { font-size: 12px; }
-    .ft-t-rev.late { color: var(--danger); }
-    .ft-t-rev.early { color: var(--success); }
+    .ft-times .mid { }
+    .ft-t-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-faint); }
+    .ft-t-sched { font-size: 15px; font-weight: 600; }
+    .ft-t-rev { font-size: 12px; display: inline-flex; align-items: center; gap: 2px; }
+    .ft-t-rev.late { color: var(--danger,#dc2626); }
+    .ft-t-rev.early { color: var(--success,#16a34a); }
     .ft-strike { text-decoration: line-through; color: var(--text-faint); font-weight: 400; }
+
+    /* progress bar (en route) */
+    .ft-prog { position: relative; height: 8px; margin: 12px 2px 4px; }
+    .ft-prog .track, .ft-prog .fill { position: absolute; left: 0; top: 3px; height: 2px; border-radius: 2px; }
+    .ft-prog .track { right: 0; background: var(--border-faint, rgba(0,0,0,.12)); }
+    .ft-prog .fill { background: var(--success, #16a34a); }
+    .ft-prog .end { position: absolute; top: 2px; width: 4px; height: 4px; border-radius: 50%; background: var(--text-faint, #999); }
+    .ft-prog .end.r { right: 0; background: var(--border-primary, #bbb); }
+    .ft-prog .dot { position: absolute; top: 0; width: 8px; height: 8px; border-radius: 50%; background: var(--success, #16a34a); box-shadow: 0 0 0 2px var(--bg-card, #fff); transform: translateX(-50%); }
+
     .ft-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
-    .ft-pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--bg-hover); color: var(--text-secondary); }
+    .ft-pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--bg-card, transparent); border: 1px solid var(--border-faint); color: var(--text-secondary); }
     .ft-pill b { color: var(--text-primary); font-weight: 600; }
-    .ft-live { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-faint); }
-    .ft-live-head { display: flex; align-items: center; gap: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); margin-bottom: 6px; }
-    .ft-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); }
-    .ft-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-    .ft-stat .v { font-size: 14px; font-weight: 700; }
-    .ft-stat .k { font-size: 10px; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-faint); }
-    .ft-layover { display: flex; align-items: center; gap: 6px; margin: 6px 0 6px 2px; padding-left: 8px; border-left: 2px dashed var(--border-faint); font-size: 11px; color: var(--text-faint); }
-    .ft-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 10px; }
+
+    .ft-live { margin-top: 10px; }
+    .ft-live-head { display: flex; align-items: center; gap: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin-bottom: 8px; }
+    .ft-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success,#16a34a); }
+    .ft-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .ft-stat .v { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 3px; }
+    .ft-stat .k { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-faint); }
+    .ft-maplink { margin-top: 8px; font-size: 11px; }
+    .ft-maplink a { color: var(--accent,#2563eb); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+    .ft-maplink a:hover { text-decoration: underline; }
+    .ft-maplink .co { color: var(--text-faint); }
+
+    /* layover connector */
+    .ft-layover { display: flex; align-items: center; gap: 8px; margin: 2px 0 2px 4px; font-size: 11px; color: var(--text-muted); }
+    .ft-layover .ln { width: 2px; align-self: stretch; min-height: 16px; background: var(--border-faint); border-radius: 2px; margin-left: 8px; }
+    .ft-layover.tight { color: var(--warning,#d97706); font-weight: 600; }
+    .ft-layover.tight .ln { background: var(--warning,#d97706); }
+    .ft-layover.broken { color: var(--danger,#dc2626); font-weight: 600; }
+    .ft-layover.broken .ln { background: var(--danger,#dc2626); }
+
+    /* collapsed completed leg */
+    .ft-collapsed { display: flex; align-items: center; gap: 8px; padding: 8px 12px; font-size: 12px; color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-md,12px); background: var(--bg-hover, rgba(0,0,0,.03)); }
+    .ft-collapsed:hover { background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
+    .ft-collapsed .ft-icon { color: var(--success,#16a34a); }
+    .ft-collapsed .grow { flex: 1; }
+    .ft-collapsed .rt { font-weight: 600; color: var(--text-primary); }
+
+    .ft-seat { font-size: 11px; color: var(--text-faint); margin-top: 6px; }
+
+    /* footer + actions */
+    .ft-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
     .ft-updated { font-size: 11px; color: var(--text-faint); }
-    .ft-actions { display: flex; gap: 4px; }
-    .ft-iconbtn { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 4px; border-radius: 6px; display: inline-flex; }
-    .ft-iconbtn:hover { background: var(--bg-hover); color: var(--text-primary); }
+    .ft-actions { display: flex; gap: 2px; }
+    .ft-iconbtn { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 6px; border-radius: 8px; display: inline-flex; line-height: 0; }
+    .ft-iconbtn .ft-icon { width: 16px; height: 16px; }
+    .ft-iconbtn:hover { background: var(--bg-hover, rgba(0,0,0,.06)); color: var(--text-primary); }
+    .ft-iconbtn:focus-visible { outline: 2px solid var(--accent,#2563eb); outline-offset: 1px; }
+
     .ft-editrow { display: flex; gap: 6px; margin-top: 8px; }
     .ft-editrow input { flex: 1; min-width: 0; }
     .ft-empty { color: var(--text-muted); font-size: 12px; }
-    .ft-linkline { font-size: 11px; color: var(--text-faint); margin-top: 6px; word-break: break-all; }
-    .ft-err { color: var(--danger); font-size: 11px; margin-top: 6px; }
     .ft-hint { color: var(--text-faint); font-size: 11px; margin-top: 8px; }
+    .ft-err { color: var(--danger,#dc2626); font-size: 11px; margin-top: 6px; }
     .ft-keyrow { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border-faint); }
-    .ft-keytoggle { background: none; border: none; color: var(--text-faint); font-size: 11px; cursor: pointer; padding: 2px 0; display: inline-flex; align-items: center; gap: 5px; }
+    .ft-keytoggle { background: none; border: none; color: var(--text-faint); font-size: 11px; cursor: pointer; padding: 3px 0; display: inline-flex; align-items: center; gap: 5px; }
     .ft-keytoggle:hover { color: var(--text-secondary); }
-    .ft-divider { height: 1px; background: var(--border-faint); margin: 10px 0; }
-    .ft-sep { height: 1px; background: var(--border-faint); margin: 10px 0; }
-    .ft-countdown { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; padding: 8px 12px; border-radius: 10px; background: var(--bg-hover); font-size: 13px; font-weight: 600; color: var(--text-secondary); }
-    .ft-countdown b { color: var(--text-primary); }
-    .ft-countdown svg { color: var(--text-muted); }
-    .ft-soon { font-size: 11px; color: var(--text-faint); margin-top: 6px; }
+    .ft-keytoggle .ft-icon { width: 13px; height: 13px; }
+
+    /* skeleton */
+    .ft-skel { border-radius: var(--radius-md,12px); background: linear-gradient(90deg, var(--bg-hover,rgba(0,0,0,.05)) 25%, color-mix(in srgb, var(--text-primary) 8%, transparent) 37%, var(--bg-hover,rgba(0,0,0,.05)) 63%); background-size: 400% 100%; }
+    .ft-skel.line { height: 12px; margin: 8px 0; }
+    .ft-skel.big { height: 56px; margin-bottom: 10px; }
+
+    /* motion — all guarded */
     @media (prefers-reduced-motion: no-preference) {
-      .ft-dot.pulse { animation: ftpulse 2s ease-out infinite; }
-      @keyframes ftpulse { 0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.5); } 70% { box-shadow: 0 0 0 6px rgba(34,197,94,0); } 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); } }
+      button.ft-iconbtn:active, .ft-collapsed:active { transform: scale(.96); }
+      .ft-iconbtn, .ft-collapsed { transition: transform 120ms cubic-bezier(.23,1,.32,1), background-color 140ms, color 140ms; }
+      .ft-dot.pulse { animation: ftpulse 2.2s ease-out infinite; }
+      @keyframes ftpulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--success,#16a34a) 55%, transparent); } 70% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--success,#16a34a) 0%, transparent); } 100% { box-shadow: 0 0 0 0 transparent; } }
+      .ft-spin { animation: ftspin .9s linear infinite; }
+      @keyframes ftspin { to { transform: rotate(360deg); } }
+      .ft-skel { animation: ftshimmer 1.4s ease infinite; }
+      @keyframes ftshimmer { 0% { background-position: 100% 0; } 100% { background-position: 0 0; } }
     }
-    .ft-spin { animation: ftspin 0.9s linear infinite; }
-    @keyframes ftspin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
-  <div id="app"><p class="ft-empty" id="boot">Loading…</p></div>
+  <div id="app"><div class="ft-skel big"></div><div class="ft-skel line" style="width:60%"></div></div>
   <script>
   (function () {
-    var SVG = {
-      plane: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>',
-      arrow: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>',
-      refresh: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/></svg>',
-      edit: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>',
-      map: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l-6 3V6l6-3 6 3 6-3v15l-6 3-6-3z"/><path d="M9 3v15M15 6v15"/></svg>',
-      up: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M6 11l6-6 6 6"/></svg>',
-      down: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M6 13l6 6 6-6"/></svg>',
-      key: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.5 12.5 20 3M16 7l3 3M18 5l2 2"/></svg>',
-      scan: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3z"/></svg>'
+    var PLANE_D = 'M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z';
+    var I = { // inline icons (viewBox 24) — CSP-safe, no external assets
+      plane: '<path d="' + PLANE_D + '"/>',
+      arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+      refresh: '<path d="M21 12a9 9 0 1 1-2.6-6.4M21 3v6h-6"/>',
+      edit: '<path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
+      map: '<path d="M9 18l-6 3V6l6-3 6 3 6-3v15l-6 3-6-3z"/><path d="M9 3v15M15 6v15"/>',
+      up: '<path d="M12 19V5M6 11l6-6 6 6"/>',
+      down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
+      key: '<circle cx="7.5" cy="15.5" r="4.5"/><path d="M10.5 12.5 20 3M16 7l3 3M18 5l2 2"/>',
+      scan: '<path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3z"/>',
+      check: '<path d="M20 6 9 17l-5-5"/>',
+      clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+      x: '<path d="M18 6 6 18M6 6l12 12"/>',
+      alert: '<path d="M10.3 3.6 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.6a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
+      seat: '<path d="M4 20V9a2 2 0 0 1 2-2h1a2 2 0 0 1 2 2v3h6a2 2 0 0 1 2 2v6M4 20h16M4 20H2M20 20h2"/>',
+      luggage: '<rect x="6" y="8" width="12" height="13" rx="2"/><path d="M9 8V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v3M10 21v1M14 21v1"/>'
     };
+    function svg(name, cls) {
+      return '<svg class="ft-icon ' + (cls || '') + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + I[name] + '</svg>';
+    }
 
     var STR = {
-      en: { loading: 'Loading flight…', noflight: 'No flight number linked to this reservation.',
-        link: 'Link', enter: 'Flight no. (e.g. LH400)', save: 'Save', change: 'Change flight number',
-        dep: 'Departure', arr: 'Arrival', terminal: 'Terminal', gate: 'Gate', belt: 'Belt',
+      en: { noflight: 'No flight number linked to this reservation.', link: 'Link', enter: 'Flight no. (e.g. LH400)',
+        save: 'Save', change: 'Change flight number', redetect: 'Re-detect flights from booking', redetected: 'Re-detected from booking',
+        dep: 'Departure', arr: 'Arrival', terminal: 'Terminal', gate: 'Gate', belt: 'Belt', seat: 'Seat',
         inair: 'In the air', alt: 'Altitude', spd: 'Ground speed', ac: 'Aircraft', onground: 'On the ground',
-        openmap: 'Open on map', updated: 'Updated', refresh: 'Refresh', delayLate: 'delayed', delayEarly: 'early',
-        ontime: 'On time', layover: 'Layover', nostatus: 'No live schedule right now.',
-        keyhint: 'Add an AeroDataBox key for schedule, gate and delay data.',
-        keyadd: 'Add AeroDataBox key', keyph: 'Paste RapidAPI key', keysaved: 'Key saved',
-        detected: 'Detected from booking', couldnt: "Couldn't build a flight number automatically — enter it:",
-        departsIn: 'Departs in', departed: 'Departed', soon: 'Live status appears ~48 h before departure.',
-        day: 'day', days: 'days', redetect: 'Re-detect flights from booking', redetected: 'Re-detected from booking' },
-      de: { loading: 'Flug wird geladen…', noflight: 'Keine Flugnummer mit dieser Buchung verknüpft.',
-        link: 'Verknüpfen', enter: 'Flugnr. (z.B. LH400)', save: 'Speichern', change: 'Flugnummer ändern',
-        dep: 'Abflug', arr: 'Ankunft', terminal: 'Terminal', gate: 'Gate', belt: 'Band',
+        openmap: 'Open on map', updated: 'Updated', refresh: 'Refresh', delayLate: 'late', delayEarly: 'early',
+        ontime: 'On time', layover: 'Layover', tightConn: 'tight connection', brokenConn: 'connection at risk',
+        nostatus: 'No live schedule right now.', total: 'total', journey: 'Journey',
+        keyhint: 'Add an AeroDataBox key for schedule, gate and delay data.', keyadd: 'Add AeroDataBox key',
+        keyph: 'Paste RapidAPI key', keysaved: 'Key saved', detected: 'Detected from booking',
+        departsIn: 'Departs in', soon: 'Live status appears ~48 h before departure.', day: 'day', days: 'days',
+        h: 'h', min: 'min', couldnt: "Couldn't read a flight number — enter it:" },
+      de: { noflight: 'Keine Flugnummer mit dieser Buchung verknüpft.', link: 'Verknüpfen', enter: 'Flugnr. (z.B. LH400)',
+        save: 'Speichern', change: 'Flugnummer ändern', redetect: 'Flüge neu aus Buchung erkennen', redetected: 'Aus Buchung neu erkannt',
+        dep: 'Abflug', arr: 'Ankunft', terminal: 'Terminal', gate: 'Gate', belt: 'Band', seat: 'Sitz',
         inair: 'In der Luft', alt: 'Höhe', spd: 'Geschwindigkeit', ac: 'Flugzeug', onground: 'Am Boden',
-        openmap: 'Auf Karte öffnen', updated: 'Aktualisiert', refresh: 'Aktualisieren', delayLate: 'verspätet', delayEarly: 'früher',
-        ontime: 'Pünktlich', layover: 'Umstieg', nostatus: 'Aktuell kein Live-Fahrplan.',
-        keyhint: 'AeroDataBox-Key ergänzen für Fahrplan, Gate und Verspätung.',
-        keyadd: 'AeroDataBox-Key hinzufügen', keyph: 'RapidAPI-Key einfügen', keysaved: 'Key gespeichert',
-        detected: 'Aus Buchung erkannt', couldnt: 'Flugnummer konnte nicht automatisch gebildet werden — bitte eingeben:',
-        departsIn: 'Abflug in', departed: 'Gestartet', soon: 'Live-Status erscheint ~48 h vor Abflug.',
-        day: 'Tag', days: 'Tage', redetect: 'Flüge neu aus Buchung erkennen', redetected: 'Aus Buchung neu erkannt' }
+        openmap: 'Auf Karte öffnen', updated: 'Aktualisiert', refresh: 'Aktualisieren', delayLate: 'später', delayEarly: 'früher',
+        ontime: 'Pünktlich', layover: 'Umstieg', tightConn: 'knapper Umstieg', brokenConn: 'Umstieg gefährdet',
+        nostatus: 'Aktuell kein Live-Fahrplan.', total: 'gesamt', journey: 'Reise',
+        keyhint: 'AeroDataBox-Key ergänzen für Fahrplan, Gate und Verspätung.', keyadd: 'AeroDataBox-Key hinzufügen',
+        keyph: 'RapidAPI-Key einfügen', keysaved: 'Key gespeichert', detected: 'Aus Buchung erkannt',
+        departsIn: 'Abflug in', soon: 'Live-Status erscheint ~48 h vor Abflug.', day: 'Tag', days: 'Tage',
+        h: 'Std', min: 'Min', couldnt: 'Flugnummer nicht erkannt — bitte eingeben:' }
     };
-
-    var STATUS_LABEL = {
-      en: { Expected: 'Expected', EnRoute: 'En route', Departed: 'Departed', Arrived: 'Arrived', Delayed: 'Delayed',
-        Canceled: 'Canceled', Cancelled: 'Cancelled', Diverted: 'Diverted', Boarding: 'Boarding', GateClosed: 'Gate closed',
-        CheckIn: 'Check-in', Approaching: 'Approaching', Unknown: 'Scheduled' },
-      de: { Expected: 'Erwartet', EnRoute: 'Unterwegs', Departed: 'Gestartet', Arrived: 'Gelandet', Delayed: 'Verspätet',
-        Canceled: 'Annulliert', Cancelled: 'Annulliert', Diverted: 'Umgeleitet', Boarding: 'Boarding', GateClosed: 'Gate zu',
-        CheckIn: 'Check-in', Approaching: 'Im Anflug', Unknown: 'Geplant' }
+    var SL = {
+      en: { Expected: 'Scheduled', EnRoute: 'En route', Departed: 'Departed', Arrived: 'Landed', Delayed: 'Delayed', Canceled: 'Cancelled', Cancelled: 'Cancelled', Diverted: 'Diverted', Boarding: 'Boarding', GateClosed: 'Gate closed', CheckIn: 'Check-in', Approaching: 'Approaching', Unknown: 'Scheduled' },
+      de: { Expected: 'Geplant', EnRoute: 'Unterwegs', Departed: 'Gestartet', Arrived: 'Gelandet', Delayed: 'Verspätet', Canceled: 'Annulliert', Cancelled: 'Annulliert', Diverted: 'Umgeleitet', Boarding: 'Boarding', GateClosed: 'Gate zu', CheckIn: 'Check-in', Approaching: 'Im Anflug', Unknown: 'Geplant' }
     };
-
     function statusVariant(s) {
       if (s === 'Arrived') return 'success';
       if (s === 'EnRoute' || s === 'Departed' || s === 'Approaching' || s === 'Boarding') return 'info';
       if (s === 'Delayed') return 'warning';
       if (s === 'Canceled' || s === 'Cancelled' || s === 'Diverted') return 'danger';
-      return 'accent';
+      return 'muted';
     }
+    function statusGlyph(s) {
+      if (s === 'Arrived') return 'check';
+      if (s === 'EnRoute' || s === 'Departed' || s === 'Approaching') return 'plane';
+      if (s === 'Delayed') return 'alert';
+      if (s === 'Canceled' || s === 'Cancelled' || s === 'Diverted') return 'x';
+      return 'clock';
+    }
+    function isCancelled(s) { return s === 'Canceled' || s === 'Cancelled' || s === 'Diverted'; }
+    function isAirborne(s) { return s === 'EnRoute' || s === 'Departed' || s === 'Approaching'; }
 
     var app = document.getElementById('app');
-    var L = STR.en, LS = STATUS_LABEL.en;
-    var ctx = null, editing = false, keyOpen = false, timer = null, busy = false, last = null, currentPhase = 'active';
-
-    function fmtCountdown(depMs) {
-      var d = depMs - Date.now();
-      if (d <= 0) return null;
-      var days = Math.floor(d / 86400000);
-      var hrs = Math.floor((d % 86400000) / 3600000);
-      var mins = Math.floor((d % 3600000) / 60000);
-      if (days >= 1) return days + ' ' + (days === 1 ? L.day : L.days) + (hrs ? ' ' + hrs + 'h' : '');
-      if (hrs >= 1) return hrs + 'h ' + mins + 'm';
-      return mins + ' min';
-    }
+    var L = STR.en, LS = SL.en, ctx = null, editing = false, keyOpen = false, timer = null, busy = false, last = null;
+    var currentPhase = 'active', expanded = {}, fmtNum0 = null, fmtNum3 = null, use12h = false, mapLinks = [];
 
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]; }); }
     function el(html) { var d = document.createElement('div'); d.innerHTML = html; return d; }
 
-    function fmtTime(iso) {
+    // ---- locale-aware formatting driven by trek:context.formats -------------
+    function setupFormats(m) {
+      var loc = (m && m.formats && m.formats.locale) || m.locale || 'en';
+      try { fmtNum0 = new Intl.NumberFormat(loc, { maximumFractionDigits: 0 }); } catch (e) { fmtNum0 = null; }
+      try { fmtNum3 = new Intl.NumberFormat(loc, { minimumFractionDigits: 3, maximumFractionDigits: 3 }); } catch (e) { fmtNum3 = null; }
+      var tf = m && m.formats && m.formats.timeFormat;
+      use12h = tf ? /12|h12|a/i.test(String(tf)) : /^(en-US|en-us)/.test(loc);
+    }
+    function nfmt(n) { return fmtNum0 ? fmtNum0.format(Math.round(n)) : String(Math.round(n)); }
+    function fmtAlt(a) { return (a === 'ground' || a == null) ? '—' : nfmt(a) + ' ft'; }
+    function fmtSpd(s) { return s == null ? '—' : nfmt(s) + ' kt'; }
+    function fmtCoord(la, lo) {
+      var f = function (v, p, n) { var d = fmtNum3 ? fmtNum3.format(Math.abs(v)) : Math.abs(v).toFixed(3); return d + '°' + (v >= 0 ? p : n); };
+      return f(la, 'N', 'S') + ' ' + f(lo, 'E', 'W');
+    }
+    function fmtDur(mins) { if (mins == null || mins < 0) return null; var h = Math.floor(mins / 60), m = mins % 60; return (h ? h + ' ' + L.h + (m ? ' ' : '') : '') + (m || !h ? m + ' ' + L.min : ''); }
+    // parse a status ISO time ('YYYY-MM-DD HH:MM+ZZ') to epoch ms, or null
+    function toMs(s) { if (!s) return null; var n = Date.parse(String(s).replace(' ', 'T')); return isNaN(n) ? null : n; }
+    function fmtClock(iso) {
       if (!iso) return { time: '—', date: '' };
-      var m = String(iso).match(/(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/);
-      if (m) return { time: m[4] + ':' + m[5], date: m[3] + '.' + m[2] };
-      var hm = String(iso).match(/^(\d{1,2}):(\d{2})/);
-      if (hm) return { time: (hm[1].length < 2 ? '0' + hm[1] : hm[1]) + ':' + hm[2], date: '' };
+      var ms = toMs(iso);
+      if (ms != null) {
+        var loc = (ctx && ctx.formats && ctx.formats.locale) || (ctx && ctx.locale) || 'en';
+        try {
+          var t = new Intl.DateTimeFormat(loc, { hour: '2-digit', minute: '2-digit', hour12: use12h }).format(ms);
+          var d = new Intl.DateTimeFormat(loc, { day: '2-digit', month: '2-digit' }).format(ms);
+          return { time: t, date: d };
+        } catch (e) { /* fall through */ }
+      }
+      var hm = String(iso).match(/(\d{1,2}):(\d{2})/);
+      if (hm) return { time: (hm[1].length < 2 ? '0' : '') + hm[1] + ':' + hm[2], date: '' };
       return { time: String(iso), date: '' };
     }
-    function fmtAlt(a) {
-      if (a === 'ground' || a === null || a === undefined) return '—';
-      return Math.round(a).toLocaleString() + ' ft';
+    // minute-of-day from an HH:MM or ISO string
+    function minsOf(s) { if (!s) return null; var m = String(s).match(/(\d{1,2}):(\d{2})/); return m ? (+m[1]) * 60 + (+m[2]) : null; }
+
+    function applyTokens(m) {
+      var t = m && m.tokens; if (!t || typeof t !== 'object') return;
+      var root = document.documentElement;
+      for (var k in t) { if (k.indexOf('--') === 0 && typeof t[k] === 'string') { try { root.style.setProperty(k, t[k]); } catch (e) {} } }
     }
-    function withSpace(n) { var m = String(n || '').match(/^([A-Z]{2,3})(\d.*)$/); return m ? m[1] + ' ' + m[2] : n; }
-    function fmtCoord(la, lo) { return la.toFixed(3) + ', ' + lo.toFixed(3); }
+    function resolveTheme(m) {
+      var th = m && typeof m.theme === 'string' ? m.theme.toLowerCase() : '';
+      if (th === 'dark' || th === 'light') return th;
+      return (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'dark' : 'light';
+    }
+
+    function fmtCountdown(depMs) {
+      var d = depMs - Date.now(); if (d <= 0) return null;
+      var days = Math.floor(d / 864e5), hrs = Math.floor((d % 864e5) / 36e5), mins = Math.floor((d % 36e5) / 6e4);
+      if (days >= 1) return days + ' ' + (days === 1 ? L.day : L.days) + (hrs ? ' ' + hrs + ' ' + L.h : '');
+      if (hrs >= 1) return hrs + ' ' + L.h + ' ' + mins + ' ' + L.min;
+      return mins + ' ' + L.min;
+    }
+    function relTime(ts) { if (!ts) return ''; var d = Math.round((Date.now() - ts) / 1000); if (d < 60) return d + 's'; if (d < 3600) return Math.round(d / 60) + 'm'; return Math.round(d / 3600) + 'h'; }
+    function withSpace(n) { var m = String(n || '').match(/^([A-Z]{2,3})(\d.*)$/); return m ? m[1] + ' ' + m[2] : n; }
+
+    function chip(status) {
+      var v = statusVariant(status);
+      return '<span class="ft-chip s-' + v + '">' + svg(statusGlyph(status)) + esc(LS[status] || status) + '</span>';
+    }
     function pill(k, v) { return '<span class="ft-pill">' + esc(k) + ' <b>' + esc(v) + '</b></span>'; }
     function stat(k, v) { return '<div class="ft-stat"><div class="v">' + v + '</div><div class="k">' + esc(k) + '</div></div>'; }
 
     function timeCol(label, times, delayMin, isArr) {
-      var sched = fmtTime(times.scheduled), rev = fmtTime(times.revised);
+      var sched = fmtClock(times.scheduled), rev = fmtClock(times.revised);
       var changed = times.revised && times.revised !== times.scheduled && rev.time !== sched.time && rev.time !== '—';
       var cls = isArr ? 'arr' : 'dep';
+      // determine direction: prefer delayMin (arrival); else compare the two times
+      var late = delayMin != null ? delayMin > 0 : (changed ? (minsOf(times.revised) >= minsOf(times.scheduled)) : true);
       var html = '<div class="' + cls + '"><div class="ft-t-label">' + esc(label) + (sched.date ? ' · ' + sched.date : '') + '</div>';
       if (changed) {
-        var late = delayMin != null ? delayMin > 0 : true;
-        html += '<div class="ft-t-sched"><span class="ft-strike">' + esc(sched.time) + '</span> <span class="ft-t-rev ' + (late ? 'late' : 'early') + '">' + esc(rev.time) + '</span></div>';
+        html += '<div class="ft-t-sched"><span class="ft-strike">' + esc(sched.time) + '</span> <span class="ft-t-rev ' + (late ? 'late' : 'early') + '">' + svg(late ? 'up' : 'down') + esc(rev.time) + '</span></div>';
       } else {
         html += '<div class="ft-t-sched">' + esc(sched.time) + '</div>';
       }
       if (isArr && delayMin != null && delayMin !== 0) {
-        html += '<div class="ft-t-rev ' + (delayMin > 0 ? 'late' : 'early') + '">' + (delayMin > 0 ? '+' + delayMin + ' min ' + esc(L.delayLate) : Math.abs(delayMin) + ' min ' + esc(L.delayEarly)) + '</div>';
+        html += '<div class="ft-t-rev ' + (delayMin > 0 ? 'late' : 'early') + '">' + (delayMin > 0 ? '+' : '−') + Math.abs(delayMin) + ' ' + L.min + ' ' + esc(delayMin > 0 ? L.delayLate : L.delayEarly) + '</div>';
       } else if (isArr && delayMin === 0) {
         html += '<div class="ft-t-rev">' + esc(L.ontime) + '</div>';
       }
       return html + '</div>';
     }
 
-    var mapLinks = [];
+    // en-route progress bar as inline SVG (no map needed)
+    function progressBar(leg) {
+      var s = leg.status; if (!s) return '';
+      var dep = toMs((s.departure && (s.departure.revised || s.departure.scheduled)));
+      var arr = toMs((s.arrival && (s.arrival.revised || s.arrival.scheduled)));
+      var fr = 0.5;
+      if (dep != null && arr != null && arr > dep) fr = Math.max(0.02, Math.min(0.98, (Date.now() - dep) / (arr - dep)));
+      var pct = (fr * 100).toFixed(1);
+      return '<div class="ft-prog"><div class="track"></div><div class="fill" style="width:' + pct + '%"></div>' +
+        '<div class="end"></div><div class="end r"></div><div class="dot" style="left:' + pct + '%"></div></div>';
+    }
 
-    function renderLeg(leg) {
+    function legTimes(leg) {
+      var s = leg.status;
+      return {
+        dep: { scheduled: (s && s.departure && s.departure.scheduled) || leg.depTime || null, revised: (s && s.departure && s.departure.revised) || null },
+        arr: { scheduled: (s && s.arrival && s.arrival.scheduled) || leg.arrTime || null, revised: (s && s.arrival && s.arrival.revised) || null }
+      };
+    }
+
+    function renderLeg(leg, idx, total) {
       var s = leg.status, live = leg.live;
-      var flightNo = withSpace(leg.number || (s && s.number) || '');
-      var airline = (s && s.airline) || leg.airline || '';
       var depIata = (s && s.departure && s.departure.iata) || leg.from || '—';
       var arrIata = (s && s.arrival && s.arrival.iata) || leg.to || '—';
       var depName = (s && s.departure && s.departure.name) || '';
       var arrName = (s && s.arrival && s.arrival.name) || '';
+      var airline = (s && s.airline) || leg.airline || '';
+      var t = legTimes(leg);
 
-      var html = '<div class="ft-leg"><div class="ft-head">' + SVG.plane +
-        '<span class="ft-flight">' + esc(flightNo) + '</span>' +
+      var head = '<div class="ft-head">' + (total > 1 ? '<span class="ft-seq">' + (idx + 1) + '</span>' : '') + svg('plane') +
+        '<span class="ft-flight">' + esc(withSpace(leg.number || (s && s.number) || '')) + '</span>' +
         (airline ? '<span class="ft-air">' + esc(airline) + '</span>' : '') +
-        (s ? '<span class="trek-chip trek-chip--' + statusVariant(s.status) + '" style="margin-left:auto">' + esc(LS[s.status] || s.status) + '</span>' : '') +
-        '</div>';
+        (s ? chip(s.status) : '') + '</div>';
 
-      html += '<div class="ft-route">' +
+      var route = '<div class="ft-route">' +
         '<div class="ft-ap dep"><div class="ft-iata">' + esc(depIata) + '</div>' + (depName ? '<div class="ft-apname">' + esc(depName) + '</div>' : '') + '</div>' +
-        '<div class="ft-arrow">' + SVG.arrow + '</div>' +
+        '<div class="ft-arrow">' + svg('arrow') + '</div>' +
         '<div class="ft-ap arr"><div class="ft-iata">' + esc(arrIata) + '</div>' + (arrName ? '<div class="ft-apname">' + esc(arrName) + '</div>' : '') + '</div></div>';
 
-      // times: prefer live status times, fall back to the booked leg times
-      var depTimes = { scheduled: (s && s.departure && s.departure.scheduled) || leg.depTime || null, revised: (s && s.departure && s.departure.revised) || null };
-      var arrTimes = { scheduled: (s && s.arrival && s.arrival.scheduled) || leg.arrTime || null, revised: (s && s.arrival && s.arrival.revised) || null };
-      html += '<div class="ft-times">' + timeCol(L.dep, depTimes, null, false) + timeCol(L.arr, arrTimes, s ? s.delayMin : null, true) + '</div>';
+      var times = '<div class="ft-times">' + timeCol(L.dep, t.dep, null, false) + '<div class="mid"></div>' + timeCol(L.arr, t.arr, s ? s.delayMin : null, true) + '</div>';
 
+      var prog = (live && isAirborne(s && s.status) && live.lat != null && !live.onGround) ? progressBar(leg) : '';
+
+      var meta = '';
       if (s) {
-        var meta = [];
-        if (s.departure.terminal) meta.push(pill(L.terminal + ' ' + depIata, s.departure.terminal));
-        if (s.departure.gate) meta.push(pill(L.gate, s.departure.gate));
-        if (s.arrival.terminal) meta.push(pill(L.terminal + ' ' + arrIata, s.arrival.terminal));
-        if (s.arrival.gate) meta.push(pill(L.gate + ' ' + arrIata, s.arrival.gate));
-        if (s.arrival.baggageBelt) meta.push(pill(L.belt, s.arrival.baggageBelt));
-        if (meta.length) html += '<div class="ft-meta">' + meta.join('') + '</div>';
+        var mp = [];
+        if (s.departure.terminal) mp.push(pill(L.terminal + ' ' + depIata, s.departure.terminal));
+        if (s.departure.gate) mp.push(pill(L.gate + ' ' + depIata, s.departure.gate));
+        if (s.arrival.terminal) mp.push(pill(L.terminal + ' ' + arrIata, s.arrival.terminal));
+        if (s.arrival.gate) mp.push(pill(L.gate + ' ' + arrIata, s.arrival.gate));
+        if (s.arrival.baggageBelt) mp.push(pill(L.belt, s.arrival.baggageBelt));
+        if (mp.length) meta = '<div class="ft-meta">' + mp.join('') + '</div>';
       }
 
+      var seat = leg.seat ? '<div class="ft-seat">' + svg('seat') + ' ' + esc(L.seat) + ' ' + esc(leg.seat) + '</div>' : '';
+
+      var liveHtml = '';
       if (live && live.lat != null && !live.onGround) {
-        var vr = live.verticalRate;
-        var trend = vr != null && vr > 64 ? SVG.up : (vr != null && vr < -64 ? SVG.down : '');
-        html += '<div class="ft-live"><div class="ft-live-head"><span class="ft-dot pulse"></span>' + esc(L.inair) + (live.desc || live.type ? ' · ' + esc(live.desc || live.type) : '') + '</div>' +
-          '<div class="ft-grid">' + stat(L.alt, fmtAlt(live.altBaro) + (trend ? ' ' + trend : '')) + stat(L.spd, live.groundSpeed != null ? Math.round(live.groundSpeed) + ' kt' : '—') + stat(L.ac, esc(live.reg || live.type || '—')) + '</div>';
-        if (live.hex) {
-          var idx = mapLinks.length; mapLinks.push(live.hex);
-          html += '<div class="ft-linkline"><a href="#" data-map="' + idx + '">' + SVG.map + ' ' + esc(L.openmap) + '</a> · ' + esc(fmtCoord(live.lat, live.lon)) + '</div>';
-        }
-        html += '</div>';
+        var vr = live.verticalRate, trend = vr != null && vr > 64 ? svg('up') : (vr != null && vr < -64 ? svg('down') : '');
+        var mi = mapLinks.length; if (live.hex) mapLinks.push(live.hex);
+        liveHtml = '<div class="ft-live"><div class="ft-live-head"><span class="ft-dot pulse"></span>' + esc(L.inair) + (live.desc || live.type ? ' · ' + esc(live.desc || live.type) : '') + '</div>' +
+          '<div class="ft-grid">' + stat(L.alt, fmtAlt(live.altBaro) + (trend ? ' ' + trend : '')) + stat(L.spd, fmtSpd(live.groundSpeed)) + stat(L.ac, esc(live.reg || live.type || '—')) + '</div>' +
+          (live.hex ? '<div class="ft-maplink"><a href="#" data-map="' + mi + '">' + svg('map') + esc(L.openmap) + '</a> <span class="co">· ' + esc(fmtCoord(live.lat, live.lon)) + '</span></div>' : '') + '</div>';
       } else if (live && live.onGround) {
-        html += '<div class="ft-live"><div class="ft-live-head"><span class="ft-dot" style="background:var(--text-faint)"></span>' + esc(L.onground) + '</div></div>';
-      } else if (!s && currentPhase === 'active') {
-        html += '<p class="ft-hint">' + esc(L.nostatus) + '</p>';
+        liveHtml = '<div class="ft-live"><div class="ft-live-head"><span class="ft-dot" style="background:var(--text-faint)"></span>' + esc(L.onground) + (live.reg ? ' · ' + esc(live.reg) : '') + '</div></div>';
       } else if (!s && currentPhase === 'upcoming') {
-        html += '<p class="ft-soon">' + esc(L.soon) + '</p>';
+        liveHtml = '<p class="ft-hint">' + esc(L.soon) + '</p>';
+      } else if (!s && currentPhase === 'active') {
+        liveHtml = '<p class="ft-hint">' + esc(L.nostatus) + '</p>';
       }
-      html += '</div>';
-      return html;
+
+      return '<div class="ft-leg ft-panel">' + head + route + times + prog + meta + seat + liveHtml + '</div>';
     }
 
-    function keyRow(hasKey) {
-      if (hasKey) return '';
-      var html = '<div class="ft-keyrow">';
-      if (!keyOpen) {
-        html += '<button class="ft-keytoggle" id="ft-keyt">' + SVG.key + ' ' + esc(L.keyadd) + '</button>';
-      } else {
-        html += '<div class="ft-editrow"><input class="trek-input" id="ft-keyin" type="password" placeholder="' + esc(L.keyph) + '" />' +
-          '<button class="trek-btn trek-btn--primary" id="ft-keysave">' + esc(L.save) + '</button></div>' +
-          '<p class="ft-hint">' + esc(L.keyhint) + '</p>';
+    function collapsedLeg(leg, idx) {
+      var s = leg.status;
+      var from = leg.from || (s && s.departure && s.departure.iata) || '';
+      var to = leg.to || (s && s.arrival && s.arrival.iata) || '';
+      return '<div class="ft-collapsed" data-exp="' + idx + '">' + svg('check') +
+        '<span class="rt">' + esc(withSpace(leg.number)) + '</span>' +
+        '<span class="grow">' + esc(from) + ' → ' + esc(to) + '</span>' +
+        '<span>' + esc(LS[s.status] || s.status) + '</span></div>';
+    }
+
+    function layover(prev, next) {
+      var a = (prev.status && prev.status.arrival && (prev.status.arrival.revised || prev.status.arrival.scheduled)) || prev.arrTime;
+      var d = (next.status && next.status.departure && (next.status.departure.revised || next.status.departure.scheduled)) || next.depTime;
+      var am = minsOf(a), dm = minsOf(d), mins = null;
+      if (am != null && dm != null) { mins = dm - am; if (mins < 0) mins += 1440; }
+      var at = next.from || (next.status && next.status.departure && next.status.departure.iata) || '';
+      var cls = 'ft-layover', dur = mins != null ? fmtDur(mins) : null, extra = '';
+      if (mins != null && mins < 0) { cls += ' broken'; extra = ' · ' + L.brokenConn; }
+      else if (mins != null && mins < 45) { cls += ' tight'; extra = ' · ' + L.tightConn; }
+      return '<div class="' + cls + '"><span class="ln"></span><span>' + svg((mins != null && mins < 45) ? 'alert' : 'arrow') + ' ' + esc(L.layover) + (at ? ' ' + esc(at) : '') + (dur ? ' · ' + dur : '') + extra + '</span></div>';
+    }
+
+    function journeyHeader(data, legs) {
+      var b = data.booking || {};
+      var origin = b.origin || (legs[0] && legs[0].from) || '';
+      var dest = b.dest || (legs[legs.length - 1] && legs[legs.length - 1].to) || '';
+      var stops = [origin];
+      for (var i = 0; i < legs.length; i++) { var to = legs[i].to || (legs[i].status && legs[i].status.arrival && legs[i].status.arrival.iata); if (to) stops.push(to); }
+      var route = stops.map(esc).join(' <span style="color:var(--text-faint)">→</span> ');
+      // overall status = worst; aggregate arrival delay = last leg's delay
+      var order = { Canceled: 5, Cancelled: 5, Diverted: 4, Delayed: 3, EnRoute: 2, Departed: 2, Approaching: 2, Boarding: 1 };
+      var worst = null, worstScore = -1;
+      legs.forEach(function (l) { var st = l.status && l.status.status; if (st && (order[st] || 0) > worstScore) { worstScore = order[st] || 0; worst = st; } if (st === 'Arrived' && worst == null) worst = 'Arrived'; });
+      var totalMin = (b.depMs && b.arrMs && b.arrMs > b.depMs) ? Math.round((b.arrMs - b.depMs) / 60000) : null;
+      var sub = [];
+      sub.push(legs.length + ' ' + (legs.length === 1 ? 'Leg' : 'Legs'));
+      if (totalMin) sub.push(fmtDur(totalMin) + ' ' + L.total);
+      if (b.pnr) sub.push(esc(b.pnr));
+      return '<div class="ft-journey"><div><div class="rt">' + route + '</div><div class="sub">' + sub.join(' · ') + '</div></div><div class="spacer"></div>' + (worst ? chip(worst) : '') + '</div>';
+    }
+
+    function nextDepartureMs(data, legs) {
+      // countdown targets the next not-yet-departed leg
+      var now = Date.now();
+      for (var i = 0; i < legs.length; i++) {
+        var s = legs[i].status;
+        if (s && isAirborne(s.status)) return null; // already flying
+        if (s && s.status === 'Arrived') continue;
+        var dep = s ? toMs(s.departure && (s.departure.revised || s.departure.scheduled)) : null;
+        if (dep && dep > now) return dep;
       }
-      return html + '</div>';
+      return (data.booking && data.booking.depMs && data.booking.depMs > now) ? data.booking.depMs : null;
     }
 
     function render(data) {
       mapLinks = [];
-      app.innerHTML = '';
-      if (!ctx || !ctx.reservationId) return;
-      if (!data) { app.appendChild(el('<p class="ft-empty">' + esc(L.loading) + '</p>')); return; }
-      if (data.applicable === false) { resize(); return; } // stay out of the way on non-flights
+      if (!ctx || !ctx.reservationId) { app.innerHTML = ''; return; }
+      if (!data) { app.innerHTML = '<div class="ft-skel big"></div><div class="ft-skel line" style="width:55%"></div>'; return; }
+      if (data.applicable === false) { app.innerHTML = ''; return; }
 
       currentPhase = (data.booking && data.booking.phase) || 'active';
-      var html = '';
       var legs = data.legs || [];
+      var anyCancelled = legs.some(function (l) { return l.status && isCancelled(l.status.status); });
+      var html = '';
 
-      // Countdown banner for upcoming flights.
-      if (data.booking && data.booking.depMs && data.booking.phase !== 'past') {
-        var cd = fmtCountdown(data.booking.depMs);
-        if (cd) html += '<div class="ft-countdown">' + SVG.plane + '<span>' + esc(L.departsIn) + ' <b>' + esc(cd) + '</b></span></div>';
+      // cancellation banner (suppresses countdown)
+      if (anyCancelled) {
+        var cl = legs.filter(function (l) { return l.status && isCancelled(l.status.status); })[0];
+        html += '<div class="ft-banner">' + svg('alert') + esc(withSpace(cl.number) + ' ' + (LS[cl.status.status] || cl.status.status)) + '</div>';
+      } else if (data.booking && data.booking.phase !== 'past') {
+        var nd = nextDepartureMs(data, legs);
+        if (nd) { var cd = fmtCountdown(nd); if (cd) html += '<div class="ft-countdown">' + svg('plane') + '<span>' + esc(L.departsIn) + ' <b>' + esc(cd) + '</b></span></div>'; }
       }
+
+      if (legs.length > 1) html += journeyHeader(data, legs);
 
       if (legs.length) {
         for (var i = 0; i < legs.length; i++) {
-          if (i > 0) {
-            var lay = legs[i].from || (legs[i].status && legs[i].status.departure && legs[i].status.departure.iata) || '';
-            html += '<div class="ft-layover">' + SVG.arrow + ' ' + esc(L.layover) + (lay ? ' · ' + esc(lay) : '') + '</div>';
-          }
-          html += renderLeg(legs[i]);
+          if (i > 0) html += layover(legs[i - 1], legs[i]);
+          var s = legs[i].status;
+          var collapsible = legs.length > 2 && s && s.status === 'Arrived' && !expanded[i];
+          html += collapsible ? collapsedLeg(legs[i], i) : renderLeg(legs[i], i, legs.length);
         }
       } else {
-        // no queryable flight
-        var isFlight = !data.booking || !data.booking.type || data.booking.type === 'flight';
-        if (data.hint) {
-          html += '<p class="ft-empty">' + esc(L.couldnt) + '</p>';
-        } else {
-          html += '<p class="ft-empty">' + esc(L.noflight) + '</p>';
-        }
-        html += '<div class="ft-editrow"><input class="trek-input" id="ft-in" placeholder="' + esc(L.enter) + '" />' +
-          '<button class="trek-btn trek-btn--primary" id="ft-save">' + esc(L.link) + '</button></div>';
-        html += '<div class="ft-keyrow"><button class="ft-keytoggle" id="ft-redetect">' + SVG.scan + ' ' + esc(L.redetect) + '</button></div>';
+        html += '<p class="ft-empty">' + esc(data.hint ? L.couldnt : L.noflight) + '</p>' +
+          '<div class="ft-editrow"><input class="trek-input" id="ft-in" placeholder="' + esc(L.enter) + '" aria-label="' + esc(L.enter) + '" />' +
+          '<button class="trek-btn trek-btn--primary" id="ft-save">' + esc(L.link) + '</button></div>' +
+          '<div class="ft-keyrow"><button class="ft-keytoggle" id="ft-redetect">' + svg('scan') + ' ' + esc(L.redetect) + '</button></div>';
       }
 
       if (editing && legs.length) {
-        html += '<div class="ft-editrow"><input class="trek-input" id="ft-in" value="' + esc(withSpace((legs[0] && legs[0].number) || '')) + '" placeholder="' + esc(L.enter) + '" />' +
+        html += '<div class="ft-editrow"><input class="trek-input" id="ft-in" value="' + esc(withSpace((legs[0] && legs[0].number) || '')) + '" placeholder="' + esc(L.enter) + '" aria-label="' + esc(L.enter) + '" />' +
           '<button class="trek-btn trek-btn--primary" id="ft-save">' + esc(L.save) + '</button></div>';
       }
 
-      html += keyRow(data.hasKey);
-
-      if (legs.length) {
-        html += '<div class="ft-foot"><span class="ft-updated">' + esc(L.updated) + ' ' + relTime(data.updatedAt) + (data.source === 'detected' ? ' · ' + esc(L.detected) : '') + '</span>' +
-          '<span class="ft-actions">' +
-          '<button class="ft-iconbtn" id="ft-redetect" title="' + esc(L.redetect) + '">' + SVG.scan + '</button>' +
-          '<button class="ft-iconbtn" id="ft-edit" title="' + esc(L.change) + '">' + SVG.edit + '</button>' +
-          '<button class="ft-iconbtn" id="ft-refresh" title="' + esc(L.refresh) + '">' + SVG.refresh + '</button>' +
-          '</span></div>';
+      // key field — admin only (the key is instance-wide)
+      if (!data.hasKey && ctx.user && ctx.user.isAdmin) {
+        html += '<div class="ft-keyrow">';
+        html += keyOpen
+          ? '<div class="ft-editrow"><input class="trek-input" id="ft-keyin" type="password" placeholder="' + esc(L.keyph) + '" aria-label="' + esc(L.keyph) + '" /><button class="trek-btn trek-btn--primary" id="ft-keysave">' + esc(L.save) + '</button></div><p class="ft-hint">' + esc(L.keyhint) + '</p>'
+          : '<button class="ft-keytoggle" id="ft-keyt">' + svg('key') + ' ' + esc(L.keyadd) + '</button>';
+        html += '</div>';
       }
 
-      app.appendChild(el(html));
+      if (legs.length) {
+        html += '<div class="ft-foot"><span class="ft-updated">' + esc(L.updated) + ' ' + relTime(data.updatedAt) + (data.source === 'detected' ? ' · ' + esc(L.detected) : '') + '</span><span class="ft-actions">' +
+          '<button class="ft-iconbtn" id="ft-redetect" title="' + esc(L.redetect) + '" aria-label="' + esc(L.redetect) + '">' + svg('scan') + '</button>' +
+          '<button class="ft-iconbtn" id="ft-edit" title="' + esc(L.change) + '" aria-label="' + esc(L.change) + '">' + svg('edit') + '</button>' +
+          '<button class="ft-iconbtn" id="ft-refresh" title="' + esc(L.refresh) + '" aria-label="' + esc(L.refresh) + '">' + svg('refresh') + '</button>' +
+          '</span></div>';
+      }
+      if (data.errors && data.errors.length && legs.length) html += '<div class="ft-err">' + esc(data.errors.join(' · ')) + '</div>';
+
+      app.innerHTML = html;
       wire();
-      resize();
     }
 
     function wire() {
       var s = document.getElementById('ft-save'), i = document.getElementById('ft-in');
-      if (s && i) {
-        var go = function () { saveNumber(i.value); };
-        s.addEventListener('click', go);
-        i.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); go(); } });
-      }
+      if (s && i) { var go = function () { saveNumber(i.value); }; s.addEventListener('click', go); i.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); go(); } }); }
       var e = document.getElementById('ft-edit'); if (e) e.addEventListener('click', function () { editing = !editing; render(last); });
       var r = document.getElementById('ft-refresh'); if (r) r.addEventListener('click', function () { doRefresh(r); });
-      var rd = document.getElementById('ft-redetect'); if (rd) rd.addEventListener('click', function () { redetect(rd); });
+      document.querySelectorAll('#ft-redetect').forEach(function (rd) { rd.addEventListener('click', function () { redetect(rd); }); });
       var kt = document.getElementById('ft-keyt'); if (kt) kt.addEventListener('click', function () { keyOpen = true; render(last); });
       var ks = document.getElementById('ft-keysave'), ki = document.getElementById('ft-keyin');
-      if (ks && ki) {
-        var gok = function () { saveKey(ki.value); };
-        ks.addEventListener('click', gok);
-        ki.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); gok(); } });
-      }
-      var links = app.querySelectorAll('a[data-map]');
-      links.forEach(function (a) {
-        a.addEventListener('click', function (ev) {
-          ev.preventDefault();
-          var hex = mapLinks[Number(a.getAttribute('data-map'))];
-          if (hex) window.trek.openExternal('https://globe.adsb.fi/?icao=' + encodeURIComponent(hex));
-        });
-      });
+      if (ks && ki) { var gk = function () { saveKey(ki.value); }; ks.addEventListener('click', gk); ki.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); gk(); } }); }
+      document.querySelectorAll('.ft-collapsed[data-exp]').forEach(function (c) { c.addEventListener('click', function () { expanded[c.getAttribute('data-exp')] = true; render(last); }); });
+      app.querySelectorAll('a[data-map]').forEach(function (a) { a.addEventListener('click', function (ev) { ev.preventDefault(); var h = mapLinks[+a.getAttribute('data-map')]; if (h) window.trek.openExternal('https://globe.adsb.fi/?icao=' + encodeURIComponent(h)); }); });
     }
 
-    function relTime(ts) {
-      if (!ts) return '';
-      var d = Math.round((Date.now() - ts) / 1000);
-      if (d < 60) return d + 's';
-      if (d < 3600) return Math.round(d / 60) + 'm';
-      return Math.round(d / 3600) + 'h';
-    }
-
-    async function saveNumber(val) {
-      if (busy) return; busy = true;
-      try {
-        var data = await window.trek.invoke('/set', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId, flightNumber: val } });
-        editing = false; last = data; render(data);
-      } catch (e) { window.trek.notify('error', e.message || 'error'); }
-      busy = false;
-    }
-
-    async function saveKey(val) {
-      if (busy) return; busy = true;
-      try {
-        await window.trek.invoke('/key', { method: 'POST', body: { apiKey: val } });
-        keyOpen = false;
-        window.trek.notify('success', L.keysaved);
-        await doRefresh(null);
-      } catch (e) { window.trek.notify('error', e.message || 'error'); }
-      busy = false;
-    }
-
-    async function redetect(btn) {
-      if (busy) return; busy = true;
-      if (btn) { var sv = btn.querySelector('svg'); if (sv) sv.classList.add('ft-spin'); }
-      try {
-        // Clearing the manual override forces a fresh detection from the reservation.
-        var data = await window.trek.invoke('/set', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId, flightNumber: '' } });
-        editing = false; last = data; render(data);
-        window.trek.notify('success', L.redetected);
-      } catch (e) { window.trek.notify('error', e.message || 'error'); }
-      busy = false;
-    }
-
-    async function doRefresh(btn) {
-      if (btn) { var sv = btn.querySelector('svg'); if (sv) sv.classList.add('ft-spin'); }
-      try {
-        var data = await window.trek.invoke('/refresh', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId } });
-        last = data; render(data);
-      } catch (e) { window.trek.notify('error', e.message || 'error'); }
-    }
+    async function saveNumber(v) { if (busy) return; busy = true; try { var d = await window.trek.invoke('/set', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId, flightNumber: v } }); editing = false; last = d; render(d); } catch (e) { window.trek.notify('error', e.message || 'error'); } busy = false; }
+    async function saveKey(v) { if (busy) return; busy = true; try { await window.trek.invoke('/key', { method: 'POST', body: { apiKey: v } }); keyOpen = false; window.trek.notify('success', L.keysaved); await doRefresh(null); } catch (e) { window.trek.notify('error', (e && e.code === 403) ? 'admin only' : (e.message || 'error')); } busy = false; }
+    async function redetect(btn) { if (busy) return; busy = true; if (btn) { var v = btn.querySelector('svg'); if (v) v.classList.add('ft-spin'); } try { var d = await window.trek.invoke('/set', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId, flightNumber: '' } }); editing = false; expanded = {}; last = d; render(d); window.trek.notify('success', L.redetected); } catch (e) { window.trek.notify('error', e.message || 'error'); } busy = false; }
+    async function doRefresh(btn) { if (btn) { var v = btn.querySelector('svg'); if (v) v.classList.add('ft-spin'); } try { var d = await window.trek.invoke('/refresh', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId } }); last = d; render(d); } catch (e) { window.trek.notify('error', e.message || 'error'); if (btn) { var v2 = btn.querySelector('svg'); if (v2) v2.classList.remove('ft-spin'); } } }
 
     async function load() {
       if (!ctx || !ctx.reservationId) { render(null); return; }
       try {
-        var data = await window.trek.invoke('/status?tripId=' + encodeURIComponent(ctx.tripId || '') + '&reservationId=' + encodeURIComponent(ctx.reservationId));
-        last = data; render(data);
+        var d = await window.trek.invoke('/status?tripId=' + encodeURIComponent(ctx.tripId || '') + '&reservationId=' + encodeURIComponent(ctx.reservationId));
+        last = d; render(d);
       } catch (e) {
-        app.innerHTML = '<p class="ft-err">' + esc(e.message || 'error') + '</p>';
+        // keep the last good data on a transient poll failure instead of wiping it
+        if (!last) app.innerHTML = '<p class="ft-err">' + esc(e.message || 'error') + '</p>';
       }
     }
 
-    function resize() { /* the design kit auto-reports height via ResizeObserver */ }
-
-    function applyLocale(m) {
-      var de = (m.locale || '').toLowerCase().indexOf('de') === 0;
-      L = de ? STR.de : STR.en; LS = de ? STATUS_LABEL.de : STATUS_LABEL.en;
-    }
+    function applyLocale(m) { var de = (m.locale || '').toLowerCase().indexOf('de') === 0; L = de ? STR.de : STR.en; LS = de ? SL.de : SL.en; }
 
     window.trek.onContext(function (m) {
-      var prevRid = ctx && ctx.reservationId;
+      var prev = ctx && ctx.reservationId;
       ctx = m;
-      document.documentElement.dataset.theme = (m.theme === 'dark' || m.theme === 'light') ? m.theme :
-        (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.dataset.theme = resolveTheme(m);
+      applyTokens(m);
       applyLocale(m);
-      if (m.reservationId !== prevRid) { editing = false; keyOpen = false; last = null; render(null); load(); }
+      setupFormats(m);
+      if (m.reservationId !== prev) { editing = false; keyOpen = false; expanded = {}; last = null; render(null); load(); }
       else if (last) render(last);
       if (!timer) timer = setInterval(load, 60000);
     });

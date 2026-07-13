@@ -12,8 +12,8 @@ try { DATA = require('./data/airlines.json'); } catch (_e) { /* optional */ }
 const ADSB_HOST = 'https://opendata.adsb.fi/api';
 const AERO_HOST = 'https://aerodatabox.p.rapidapi.com';
 
-const CACHE_TTL_MS = 45 * 1000;
-const FETCH_TIMEOUT_MS = 8000;
+const CACHE_TTL_MS = 60 * 1000;
+const FETCH_TIMEOUT_MS = 7000;
 const MAX_LEGS = 6;
 
 // Curated overrides — win over the dataset (fixes cargo/subsidiary IATA clashes
@@ -126,6 +126,9 @@ function getFlightLegs(r) {
       airline: l.airline || null, airlineCode: l.airline_code || null,
       flight: l.flight_number || l.flightNumber || null,
       depTime: l.dep_time || null, arrTime: l.arr_time || null,
+      depDayId: l.dep_day_id != null ? l.dep_day_id : null,
+      arrDayId: l.arr_day_id != null ? l.arr_day_id : null,
+      seat: l.seat || null,
     }));
   }
   const eps = orderedEndpoints(r);
@@ -139,6 +142,10 @@ function getFlightLegs(r) {
     flight: meta.flight_number || meta.flightNumber || null,
     depTime: (first && first.local_time) || null,
     arrTime: (last && last.local_time) || null,
+    depDayId: r.day_id != null ? r.day_id : null,
+    arrDayId: r.end_day_id != null ? r.end_day_id : (r.day_id != null ? r.day_id : null),
+    seat: meta.seat || null,
+    localDepDate: (first && first.local_date) || null,
   }];
 }
 
@@ -155,6 +162,9 @@ function resolveLeg(leg) {
   return {
     number, callsign, airline: leg.airline, from: leg.from, to: leg.to,
     depTime: leg.depTime, arrTime: leg.arrTime, rawFlight: leg.flight,
+    depDayId: leg.depDayId != null ? leg.depDayId : null,
+    arrDayId: leg.arrDayId != null ? leg.arrDayId : null,
+    seat: leg.seat || null, localDepDate: leg.localDepDate || null,
   };
 }
 
@@ -237,10 +247,15 @@ function airportBlock(block, times) {
 
 async function fetchLive(opts) {
   const tries = [];
-  if (opts.reg) tries.push('/v2/registration/' + encodeURIComponent(opts.reg));
-  if (opts.callSign) tries.push('/v2/callsign/' + encodeURIComponent(normNumber(opts.callSign)));
-  if (opts.callsignHint) tries.push('/v2/callsign/' + encodeURIComponent(normNumber(opts.callsignHint)));
-  if (opts.number) tries.push('/v2/callsign/' + encodeURIComponent(opts.number));
+  if (opts.reg) {
+    // Registration is the unique tail — authoritative, so don't also spend
+    // requests on the shared call sign.
+    tries.push('/v2/registration/' + encodeURIComponent(opts.reg));
+  } else {
+    if (opts.callSign) tries.push('/v2/callsign/' + encodeURIComponent(normNumber(opts.callSign)));
+    if (opts.callsignHint) tries.push('/v2/callsign/' + encodeURIComponent(normNumber(opts.callsignHint)));
+    if (opts.number) tries.push('/v2/callsign/' + encodeURIComponent(opts.number));
+  }
   const seen = {};
   for (const path of tries) {
     if (seen[path]) continue; seen[path] = 1;
@@ -359,9 +374,12 @@ async function buildPayload(ctx, tripId, reservationId, forcedNumber) {
   // adsb.fi live position: only while the aircraft is plausibly airborne — 1h
   // before departure to 2h after arrival. Prevents matching another day's flight.
   const liveWin = !depMs ? true : (now >= depMs - 1 * H && now <= arrMs + 2 * H);
-  const win = { status: statusWin, live: liveWin, date: baseDate };
-
-  const booking = { type: bookingType, depMs: depMs || null, arrMs: arrMs || null, phase };
+  // Map trip day ids -> dates, so a per-leg (possibly next-day) query hits the
+  // right calendar day instead of the reservation-level date.
+  const days = tripId ? await attempt(() => ctx.trips.getDays(Number(tripId)), []) : [];
+  const dayDate = {};
+  (days || []).forEach((d) => { if (d && d.id != null && d.date) dayDate[String(d.id)] = String(d.date).slice(0, 10); });
+  const legDate = (l) => (l.depDayId != null && dayDate[String(l.depDayId)]) || l.localDepDate || baseDate || null;
 
   let rawLegs;
   if (overrideNumber) {
@@ -374,6 +392,14 @@ async function buildPayload(ctx, tripId, reservationId, forcedNumber) {
 
   const queryable = rawLegs.filter((l) => l.number);
 
+  const booking = {
+    type: bookingType, depMs: depMs || null, arrMs: arrMs || null, phase,
+    pnr: (resv && (resv.confirmation_number || null)) || null,
+    origin: (queryable[0] && queryable[0].from) || null,
+    dest: (queryable.length && queryable[queryable.length - 1].to) || null,
+    legCount: queryable.length,
+  };
+
   if (!queryable.length) {
     const applicable = !bookingType || bookingType === 'flight';
     return { applicable, source: 'none', hasKey, legs: [], booking,
@@ -381,17 +407,37 @@ async function buildPayload(ctx, tripId, reservationId, forcedNumber) {
       updatedAt: Date.now() };
   }
 
-  // Track each leg (parallel; cache dedups repeat load).
-  const legs = await Promise.all(queryable.map((l) => attempt(() => trackLeg(l, key, win), Object.assign({}, l, { status: null, live: null, errors: ['failed'] }))));
+  // Track legs SEQUENTIALLY to respect both APIs' 1 req/s free-tier ceiling
+  // (bursting Promise.all over legs would trip rate limits). Each leg pins its own
+  // date. A past/arrived leg is not re-queried live.
+  const legs = [];
+  for (const l of queryable) {
+    const win = { status: statusWin, live: liveWin, date: legDate(l) };
+    const tracked = await attempt(() => trackLeg(l, key, win), Object.assign({}, l, { status: null, live: null, errors: ['failed'] }));
+    legs.push(tracked);
+  }
 
   return { applicable: true, source, hasKey, legs, booking, updatedAt: Date.now() };
+}
+
+// Cache lifetime by phase: an active flight refreshes ~once a minute, but a
+// far-future or completed flight barely changes — so we don't burn the ~600/mo
+// AeroDataBox quota re-fetching schedules that won't move.
+function ttlFor(payload) {
+  const ph = payload && payload.booking && payload.booking.phase;
+  if (ph === 'past') return 6 * 3600 * 1000;
+  if (ph === 'upcoming') return 30 * 60 * 1000;
+  return CACHE_TTL_MS;
 }
 
 async function cachedPayload(ctx, tripId, reservationId, force, forcedNumber) {
   if (!force && !forcedNumber) {
     const rows = await attempt(() => ctx.db.query('SELECT payload, fetched_at FROM cache WHERE reservation_id = ?', reservationId), []);
-    if (rows && rows[0] && (Date.now() - Number(rows[0].fetched_at)) < CACHE_TTL_MS) {
-      try { return Object.assign(JSON.parse(rows[0].payload), { cached: true }); } catch (_e) { /* refetch */ }
+    if (rows && rows[0]) {
+      try {
+        const cached = JSON.parse(rows[0].payload);
+        if ((Date.now() - Number(rows[0].fetched_at)) < ttlFor(cached)) return Object.assign(cached, { cached: true });
+      } catch (_e) { /* refetch */ }
     }
   }
   const payload = await buildPayload(ctx, tripId, reservationId, forcedNumber);
@@ -543,9 +589,12 @@ module.exports = definePlugin({
         return json(200, await cachedPayload(ctx, p.tripId, rid, true, number));
       } },
 
-    // In-widget fallback for the AeroDataBox key (stored in the plugin's own DB).
+    // In-widget fallback for the AeroDataBox key (stored in the plugin's own DB,
+    // instance-wide). Admin-only: the key is shared by every user, so only an
+    // admin may set or clear it (mirrors TREK's admin-owned instance settings).
     { method: 'POST', path: '/key', auth: true,
       async handler(req, ctx) {
+        if (!req.user || !req.user.isAdmin) return json(403, { error: 'admin only' });
         const p = readParams(req);
         const val = (p.apiKey == null ? '' : String(p.apiKey)).trim();
         if (val) await ctx.db.exec("INSERT OR REPLACE INTO kv (k, v) VALUES ('aerodatabox_key', ?)", val);

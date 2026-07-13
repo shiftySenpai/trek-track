@@ -13,9 +13,16 @@ actual aircraft position from the free **adsb.fi** open-data network.
   from the reservation's airline + flight-number fields (e.g. `Austrian
   Airlines` + `254` → `OS254`), using a bundled database of ~1600 airlines. If it
   can't, you type it once and it is remembered for that reservation.
-- **Multi-leg flights.** Connections are fully supported: each leg (e.g.
-  `KLU → VIE` on Austrian, then `VIE → HAM` on Eurowings) is tracked separately,
-  with a layover marker in between.
+- **Multi-leg flights.** Connections are fully supported: a total-route header
+  (e.g. `KLU → VIE → HAM`, gate-to-gate duration, overall status) sits above each
+  leg (Austrian, then Eurowings), tracked separately with the **layover duration**
+  and a **tight-connection warning** in between. Long itineraries collapse
+  completed legs.
+- **Native TREK look & locale-correct formatting.** The widget applies TREK's
+  live theme tokens and formats times (12/24 h), dates, altitude/speed and
+  coordinates via your locale; status shows an icon (not colour alone); an
+  en-route leg draws a progress bar. Per-leg query dates come from the trip days,
+  so overnight connections resolve correctly.
 - **Schedule & status** (via AeroDataBox): departure/arrival airports, scheduled
   vs. estimated times, delay in minutes, live status (boarding, en route,
   arrived, cancelled), plus terminal, gate and baggage belt.
