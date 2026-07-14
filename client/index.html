@@ -114,6 +114,14 @@
     .ft-collapsed .rt { font-weight: 600; color: var(--text-primary); }
 
     .ft-seat { font-size: 11px; color: var(--text-faint); margin-top: 6px; }
+    .ft-weather { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--text-secondary); }
+    .ft-weather .ft-icon { width: 16px; height: 16px; color: var(--text-muted); }
+    .ft-weather .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-faint); }
+    .ft-weather .mut { color: var(--text-muted); }
+    .ft-weather b { color: var(--text-primary); }
+    .ft-inbound { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--text-secondary); }
+    .ft-inbound .ft-icon { width: 14px; height: 14px; color: var(--accent, #7c3aed); }
+    .ft-homez { font-size: 11px; color: var(--text-faint); margin-top: 1px; }
 
     /* footer + actions */
     .ft-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
@@ -157,6 +165,8 @@
   <script>
   (function () {
     var PLANE_D = 'M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z';
+    // a compact plane silhouette pointing UP (north) — for the heading marker on the map
+    var PLANE_N = 'M0 -9 C1.3 -9 1.8 -6.2 1.8 -3.6 L8.6 1 L8.6 2.7 L1.8 0.6 L1.8 4.7 L3.7 6.3 L3.7 7.5 L0 6.3 L-3.7 7.5 L-3.7 6.3 L-1.8 4.7 L-1.8 0.6 L-8.6 2.7 L-8.6 1 L-1.8 -3.6 C-1.8 -6.2 -1.3 -9 0 -9 Z';
     var I = { // inline icons (viewBox 24) — CSP-safe, no external assets
       plane: '<path d="' + PLANE_D + '"/>',
       arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
@@ -172,7 +182,14 @@
       x: '<path d="M18 6 6 18M6 6l12 12"/>',
       alert: '<path d="M10.3 3.6 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.6a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>',
       seat: '<path d="M4 20V9a2 2 0 0 1 2-2h1a2 2 0 0 1 2 2v3h6a2 2 0 0 1 2 2v6M4 20h16M4 20H2M20 20h2"/>',
-      luggage: '<rect x="6" y="8" width="12" height="13" rx="2"/><path d="M9 8V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v3M10 21v1M14 21v1"/>'
+      luggage: '<rect x="6" y="8" width="12" height="13" rx="2"/><path d="M9 8V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v3M10 21v1M14 21v1"/>',
+      wsun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4"/>',
+      wcloud: '<path d="M17.5 19a4.5 4.5 0 0 0 0-9 6 6 0 0 0-11.5 2A4 4 0 0 0 6 19h11.5z"/>',
+      wrain: '<path d="M16 13a4 4 0 0 0 0-8 5 5 0 0 0-9.6 1.7A3.5 3.5 0 0 0 6 13h10z"/><path d="M8 17v2M12 17v3M16 17v2"/>',
+      wdrizzle: '<path d="M16 12a4 4 0 0 0 0-8 5 5 0 0 0-9.6 1.7A3.5 3.5 0 0 0 6 12h10z"/><path d="M9 17v1.5M13 17v1.5M17 17v1.5"/>',
+      wsnow: '<path d="M16 13a4 4 0 0 0 0-8 5 5 0 0 0-9.6 1.7A3.5 3.5 0 0 0 6 13h10z"/><path d="M8 18h.01M12 19h.01M16 18h.01M10 21h.01M14 21h.01"/>',
+      wfog: '<path d="M16 12a4 4 0 0 0 0-8 5 5 0 0 0-9.6 1.7A3.5 3.5 0 0 0 6 12h10z"/><path d="M5 16h14M7 20h10"/>',
+      wstorm: '<path d="M16 12a4 4 0 0 0 0-8 5 5 0 0 0-9.6 1.7A3.5 3.5 0 0 0 6 12h4"/><path d="m12 12-2 4h3l-2 4"/>'
     };
     function svg(name, cls) {
       return '<svg class="ft-icon ' + (cls || '') + '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + I[name] + '</svg>';
@@ -242,14 +259,34 @@
       // draw as many +/-360 world copies as the (possibly unwrapped) lon range needs
       var world = '';
       for (var k = -2; k <= 2; k++) { if (k * 360 + 180 >= minLon && k * 360 - 180 <= maxLon) world += '<path d="' + FT_WORLD + '"' + (k ? ' transform="translate(' + (k * 360) + ',0)"' : '') + ' fill="var(--ft-land)" stroke="none"/>'; }
+      var pathOf = function (pts) { return 'M' + pts.map(function (p) { return p.lon + ' ' + p.lat; }).join(' L'); };
       var routeSvg = '';
-      if (route) routeSvg = '<path d="M' + route.map(function (p) { return p.lon + ' ' + p.lat; }).join(' L') + '" fill="none" stroke="var(--accent,#7c3aed)" stroke-width="1.5" stroke-dasharray="2 2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>';
+      if (route && P) {
+        // split the route at the plane: flown = solid green, remaining = dashed muted
+        var ki = 0, best = Infinity;
+        for (var i2 = 0; i2 < route.length; i2++) { var dla = route[i2].lat - P.lat, dgo = route[i2].lon - P.lon, dd = dla * dla + dgo * dgo; if (dd < best) { best = dd; ki = i2; } }
+        var flown = route.slice(0, ki + 1).concat([{ lat: P.lat, lon: P.lon }]);
+        var rem = [{ lat: P.lat, lon: P.lon }].concat(route.slice(ki + 1));
+        routeSvg = '<path d="' + pathOf(rem) + '" fill="none" stroke="var(--text-faint,#999)" stroke-width="1.4" stroke-dasharray="2 2.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>' +
+          '<path d="' + pathOf(flown) + '" fill="none" stroke="var(--success,#16a34a)" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>';
+      } else if (route) {
+        routeSvg = '<path d="' + pathOf(route) + '" fill="none" stroke="var(--accent,#7c3aed)" stroke-width="1.5" stroke-dasharray="2 2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>';
+      }
       var mk = '';
       function dot(p, fill, rr) { return '<circle cx="' + p.lon + '" cy="' + p.lat + '" r="' + rr + '" fill="' + fill + '" stroke="var(--ft-surface)" stroke-width="' + (r * 0.4) + '"/>'; }
       var d0 = route ? route[0] : dep, dN = route ? route[route.length - 1] : arr;
       if (d0) mk += dot(d0, 'var(--text-faint,#999)', r * 0.8);
       if (dN) mk += dot(dN, 'var(--text-secondary,#bbb)', r * 0.8);
-      if (P) mk += '<circle class="ft-planepulse" cx="' + P.lon + '" cy="' + P.lat + '" r="' + (r * 1.15) + '" fill="var(--success,#16a34a)" stroke="var(--ft-surface)" stroke-width="' + (r * 0.5) + '"/>';
+      if (P) {
+        mk += '<circle cx="' + P.lon + '" cy="' + P.lat + '" r="' + (r * 1.5) + '" fill="var(--success,#16a34a)" fill-opacity="0.22" stroke="none"/>';
+        var trk = plane && plane.track != null ? plane.track : null;
+        if (trk != null) {
+          var ps = r * 0.145;
+          mk += '<g transform="translate(' + P.lon + ',' + P.lat + ') scale(1,-1) rotate(' + trk + ') scale(' + ps + ')"><path d="' + PLANE_N + '" fill="var(--success,#16a34a)" stroke="var(--ft-surface)" stroke-width="1.4" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></g>';
+        } else {
+          mk += '<circle cx="' + P.lon + '" cy="' + P.lat + '" r="' + (r * 1.1) + '" fill="var(--success,#16a34a)" stroke="var(--ft-surface)" stroke-width="' + (r * 0.5) + '"/>';
+        }
+      }
       return '<div class="ft-minimap"><svg viewBox="' + vb + '" preserveAspectRatio="xMidYMid slice" aria-hidden="true">' +
         '<g transform="scale(1,-1)">' + world + routeSvg + mk + '</g></svg></div>';
     }
@@ -265,7 +302,8 @@
         keyhint: 'Add an AeroDataBox key for schedule, gate and delay data.', keyadd: 'Add AeroDataBox key',
         keyph: 'Paste RapidAPI key', keysaved: 'Key saved', detected: 'Detected from booking',
         departsIn: 'Departs in', soon: 'Live status appears ~48 h before departure.', day: 'day', days: 'days',
-        h: 'h', min: 'min', remaining: 'in', couldnt: "Couldn't read a flight number — enter it:" },
+        h: 'h', min: 'min', remaining: 'in', nosignal: 'Position temporarily out of ADS-B coverage',
+        inbound: 'Aircraft inbound', boarding: 'Boarding', yourtime: 'your time', couldnt: "Couldn't read a flight number — enter it:" },
       de: { noflight: 'Keine Flugnummer mit dieser Buchung verknüpft.', link: 'Verknüpfen', enter: 'Flugnr. (z.B. LH400)',
         save: 'Speichern', change: 'Flugnummer ändern', redetect: 'Flüge neu aus Buchung erkennen', redetected: 'Aus Buchung neu erkannt',
         dep: 'Abflug', arr: 'Ankunft', terminal: 'Terminal', gate: 'Gate', belt: 'Band', seat: 'Sitz',
@@ -276,7 +314,8 @@
         keyhint: 'AeroDataBox-Key ergänzen für Fahrplan, Gate und Verspätung.', keyadd: 'AeroDataBox-Key hinzufügen',
         keyph: 'RapidAPI-Key einfügen', keysaved: 'Key gespeichert', detected: 'Aus Buchung erkannt',
         departsIn: 'Abflug in', soon: 'Live-Status erscheint ~48 h vor Abflug.', day: 'Tag', days: 'Tage',
-        h: 'Std', min: 'Min', remaining: 'noch', couldnt: 'Flugnummer nicht erkannt — bitte eingeben:' }
+        h: 'Std', min: 'Min', remaining: 'noch', nosignal: 'Position gerade ohne ADS-B-Empfang',
+        inbound: 'Flieger im Anflug', boarding: 'Boarding', yourtime: 'deine Zeit', couldnt: 'Flugnummer nicht erkannt — bitte eingeben:' }
     };
     var SL = {
       en: { Expected: 'Scheduled', EnRoute: 'En route', Departed: 'Departed', Arrived: 'Landed', Delayed: 'Delayed', Canceled: 'Cancelled', Cancelled: 'Cancelled', Diverted: 'Diverted', Boarding: 'Boarding', GateClosed: 'Gate closed', CheckIn: 'Check-in', Approaching: 'Approaching', Unknown: 'Scheduled' },
@@ -342,6 +381,22 @@
     // minute-of-day from an HH:MM or ISO string
     function minsOf(s) { if (!s) return null; var m = String(s).match(/(\d{1,2}):(\d{2})/); return m ? (+m[1]) * 60 + (+m[2]) : null; }
 
+    var WICON = { Clear: 'wsun', Clouds: 'wcloud', Rain: 'wrain', Drizzle: 'wdrizzle', Snow: 'wsnow', Fog: 'wfog', Thunderstorm: 'wstorm' };
+    function fmtTemp(c) {
+      if (c == null) return '—';
+      var u = ctx && ctx.formats && ctx.formats.temperatureUnit;
+      if (u && /f/i.test(String(u))) return Math.round(c * 9 / 5 + 32) + '°F';
+      return Math.round(c) + '°C';
+    }
+    function weatherLine(w, iata) {
+      if (!w || w.temp == null) return '';
+      var bits = [svg(WICON[w.main] || 'wcloud'), '<span class="lbl">' + esc(iata || '') + '</span>', '<b>' + fmtTemp(w.temp) + '</b>'];
+      if (w.description || w.main) bits.push('<span class="mut">' + esc(w.description || w.main) + '</span>');
+      if (w.tempMin != null && w.tempMax != null) bits.push('<span class="mut">' + fmtTemp(w.tempMin) + '/' + fmtTemp(w.tempMax) + '</span>');
+      if (w.precipProb != null && w.precipProb >= 20) bits.push('<span class="mut">' + w.precipProb + ' %</span>');
+      return '<div class="ft-weather">' + bits.join(' ') + '</div>';
+    }
+
     function applyTokens(m) {
       var t = m && m.tokens; if (!t || typeof t !== 'object') return;
       var root = document.documentElement;
@@ -387,6 +442,19 @@
       } else if (isArr && delayMin === 0) {
         html += '<div class="ft-t-rev">' + esc(L.ontime) + '</div>';
       }
+      // arrival also in the traveller's own timezone, when it differs
+      if (isArr && times.utc) {
+        var tz = ctx && ctx.formats && ctx.formats.timezone;
+        var loc = (ctx && ctx.formats && ctx.formats.locale) || (ctx && ctx.locale) || 'en';
+        var ms = toMs(times.utc);
+        if (tz && ms != null) {
+          try {
+            var home = new Intl.DateTimeFormat(loc, { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: use12h }).format(ms);
+            var shown = (times.revised && rev.time !== '—') ? rev.time : sched.time;
+            if (home && home !== shown) html += '<div class="ft-homez">' + esc(home) + ' ' + esc(L.yourtime) + '</div>';
+          } catch (e) { /* ignore */ }
+        }
+      }
       return html + '</div>';
     }
 
@@ -406,7 +474,8 @@
       var s = leg.status;
       return {
         dep: { scheduled: (s && s.departure && s.departure.scheduled) || leg.depTime || null, revised: (s && s.departure && s.departure.revised) || null },
-        arr: { scheduled: (s && s.arrival && s.arrival.scheduled) || leg.arrTime || null, revised: (s && s.arrival && s.arrival.revised) || null }
+        arr: { scheduled: (s && s.arrival && s.arrival.scheduled) || leg.arrTime || null, revised: (s && s.arrival && s.arrival.revised) || null,
+          utc: (s && s.arrival && (s.arrival.revisedUtc || s.arrival.scheduledUtc)) || null }
       };
     }
 
@@ -446,14 +515,16 @@
 
       var seat = leg.seat ? '<div class="ft-seat">' + svg('seat') + ' ' + esc(L.seat) + ' ' + esc(leg.seat) + '</div>' : '';
 
+      var wx = weatherLine(leg.weather, arrIata);
+      var depC = (s && s.departure && s.departure.lat != null && s.departure.lon != null) ? { lat: s.departure.lat, lon: s.departure.lon } : null;
+      var arrC = (s && s.arrival && s.arrival.lat != null && s.arrival.lon != null) ? { lat: s.arrival.lat, lon: s.arrival.lon } : null;
+      var hasFix = live && live.lat != null && !live.onGround;
+      var planeC = hasFix ? { lat: live.lat, lon: live.lon, track: live.track } : null;
+      var airborne = s && isAirborne(s.status);
+
       var liveHtml = '';
-      if (live && live.lat != null && !live.onGround) {
+      if (hasFix) {
         var vr = live.verticalRate, trend = vr != null && vr > 64 ? svg('up') : (vr != null && vr < -64 ? svg('down') : '');
-        var mi = mapLinks.length; if (live.hex) mapLinks.push(live.hex);
-        var depC = (s && s.departure && s.departure.lat != null && s.departure.lon != null) ? { lat: s.departure.lat, lon: s.departure.lon } : null;
-        var arrC = (s && s.arrival && s.arrival.lat != null && s.arrival.lon != null) ? { lat: s.arrival.lat, lon: s.arrival.lon } : null;
-        var planeC = { lat: live.lat, lon: live.lon };
-        // progress line: % complete · time remaining · distance to destination
         var bits = [];
         var dms = toMs(s && s.departure && (s.departure.revised || s.departure.scheduled));
         var ams = toMs(s && s.arrival && (s.arrival.revised || s.arrival.scheduled));
@@ -462,18 +533,50 @@
         if (arrC) bits.push('<b>' + nfmt(haversineKm(planeC, arrC)) + '</b> km');
         var progLine = bits.length ? '<div class="ft-progline">' + bits.join('<span class="sep">·</span>') + '</div>' : '';
         liveHtml = '<div class="ft-live"><div class="ft-live-head"><span class="ft-dot pulse"></span>' + esc(L.inair) + (live.desc || live.type ? ' · ' + esc(live.desc || live.type) : '') + '</div>' +
-          '<div class="ft-grid">' + stat(L.alt, fmtAlt(live.altBaro) + (trend ? ' ' + trend : '')) + stat(L.spd, fmtSpd(live.groundSpeed)) + stat(L.ac, esc(live.reg || live.type || '—')) + '</div>' +
-          progLine + drawMap(depC, arrC, planeC) +
-          (live.hex ? '<div class="ft-maplink"><a href="#" data-map="' + mi + '">' + svg('map') + esc(L.openmap) + '</a> <span class="co">· ' + esc(fmtCoord(live.lat, live.lon)) + '</span></div>' : '') + '</div>';
+          '<div class="ft-grid">' + stat(L.alt, fmtAlt(live.altBaro) + (trend ? ' ' + trend : '')) + stat(L.spd, fmtSpd(live.groundSpeed)) + stat(L.ac, esc(live.reg || live.type || '—')) + '</div>' + progLine + '</div>';
       } else if (live && live.onGround) {
         liveHtml = '<div class="ft-live"><div class="ft-live-head"><span class="ft-dot" style="background:var(--text-faint)"></span>' + esc(L.onground) + (live.reg ? ' · ' + esc(live.reg) : '') + '</div></div>';
+      } else if (airborne) {
+        // status says airborne but no ADS-B fix right now (coverage gap) — keep the map
+        liveHtml = '<div class="ft-live"><div class="ft-live-head"><span class="ft-dot" style="background:var(--text-faint)"></span>' + esc(L.inair) + '</div><p class="ft-hint">' + esc(L.nosignal) + '</p></div>';
       } else if (!s && currentPhase === 'upcoming') {
         liveHtml = '<p class="ft-hint">' + esc(L.soon) + '</p>';
       } else if (!s && currentPhase === 'active') {
         liveHtml = '<p class="ft-hint">' + esc(L.nostatus) + '</p>';
       }
 
-      return '<div class="ft-leg ft-panel">' + head + route + times + prog + meta + seat + liveHtml + '</div>';
+      // "your aircraft is inbound" — before departure, where the assigned tail is now
+      var inboundHtml = '';
+      if (leg.inbound && leg.inbound.lat != null && !hasFix) {
+        var ib = leg.inbound, etaTxt = '';
+        if (depC && ib.groundSpeed > 60) {
+          var ikm = haversineKm({ lat: ib.lat, lon: ib.lon }, depC), etaMin = Math.round((ikm / 1.852) / ib.groundSpeed * 60);
+          if (etaMin > 0 && etaMin < 600) etaTxt = ' · ' + esc(L.remaining) + ' ~' + fmtDur(etaMin);
+        }
+        inboundHtml = '<div class="ft-inbound">' + svg('plane') + '<span>' + esc(L.inbound) + (ib.reg ? ' · ' + esc(ib.reg) : '') + etaTxt + '</span></div>';
+      }
+      // boarding estimate (~40 min before scheduled departure, airport-local)
+      var boardingHtml = '';
+      if (s && !airborne && s.status !== 'Arrived' && s.status !== 'Boarding' && s.status !== 'GateClosed' && currentPhase !== 'past') {
+        var depLoc = s.departure && (s.departure.revised || s.departure.scheduled), dmn = minsOf(depLoc), depAbs = toMs(depLoc);
+        if (dmn != null && depAbs && (depAbs - 40 * 60000) > Date.now()) {
+          var bm = (dmn - 40 + 1440) % 1440, bh = Math.floor(bm / 60), bmi = bm % 60;
+          boardingHtml = '<div class="ft-inbound">' + svg('clock') + '<span>' + esc(L.boarding) + ' ~' + (bh < 10 ? '0' : '') + bh + ':' + (bmi < 10 ? '0' : '') + bmi + '</span></div>';
+        }
+      }
+
+      // Show the map whenever we know the route (both airport coords) OR have a
+      // live fix — for scheduled, en-route, coverage-gap AND arrived flights alike.
+      // The plane dot only appears with a live fix. Guarded so a map error can
+      // never blank the rest of the widget.
+      var mapHtml = '';
+      try { if ((depC && arrC) || hasFix) mapHtml = drawMap(depC, arrC, planeC); } catch (e) { mapHtml = ''; }
+      var linkHtml = '';
+      if (hasFix && live.hex) { var mi = mapLinks.length; mapLinks.push(live.hex); linkHtml = '<div class="ft-maplink"><a href="#" data-map="' + mi + '">' + svg('map') + esc(L.openmap) + '</a> <span class="co">· ' + esc(fmtCoord(live.lat, live.lon)) + '</span></div>'; }
+
+      // the minimap now conveys flown-vs-remaining, so the linear bar is only a
+      // fallback when there's no map (e.g. status but no airport coords)
+      return '<div class="ft-leg ft-panel">' + head + route + times + (mapHtml ? '' : prog) + meta + boardingHtml + seat + wx + inboundHtml + liveHtml + mapHtml + linkHtml + '</div>';
     }
 
     function collapsedLeg(leg, idx) {
@@ -622,6 +725,24 @@
       }
     }
 
+    // Self-scheduling poll: pause while the tab is hidden, stop once the flight is
+    // done, poll slowly for far-future flights — to spare the AeroDataBox quota.
+    var pollT = null, visWired = false;
+    function pollDelay() {
+      if (!last) return 60000;
+      var b = last.booking || {}, legs = last.legs || [];
+      if (b.phase === 'past') return 0;
+      if (legs.length && legs.every(function (l) { return l.status && l.status.status === 'Arrived'; })) return 0;
+      if (b.phase === 'upcoming') return 600000;
+      return 60000;
+    }
+    function scheduleNext() {
+      if (pollT) { clearTimeout(pollT); pollT = null; }
+      var d = pollDelay();
+      if (d > 0) pollT = setTimeout(tick, d);
+    }
+    async function tick() { pollT = null; if (!document.hidden) await load(); scheduleNext(); }
+
     function applyLocale(m) { var de = (m.locale || '').toLowerCase().indexOf('de') === 0; L = de ? STR.de : STR.en; LS = de ? SL.de : SL.en; }
 
     window.trek.onContext(function (m) {
@@ -631,9 +752,12 @@
       applyTokens(m);
       applyLocale(m);
       setupFormats(m);
-      if (m.reservationId !== prev) { editing = false; keyOpen = false; expanded = {}; last = null; render(null); load(); }
-      else if (last) render(last);
-      if (!timer) timer = setInterval(load, 60000);
+      if (m.reservationId !== prev) { editing = false; keyOpen = false; expanded = {}; last = null; render(null); load().then(scheduleNext); }
+      else { if (last) render(last); scheduleNext(); }
+      if (!visWired) {
+        visWired = true;
+        document.addEventListener('visibilitychange', function () { if (!document.hidden) load().then(scheduleNext); });
+      }
     });
   })();
   </script>

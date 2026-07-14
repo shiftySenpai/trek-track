@@ -31,8 +31,15 @@ actual aircraft position from the free **adsb.fi** open-data network.
   aircraft type, a **progress read-out** (percent complete, time remaining,
   distance to destination), and a **built-in minimap** that plots the route and
   the aircraft on an embedded vector world map — no external map tiles, so it
-  works inside TREK's strict plugin sandbox. Plus a one-tap link to a full live
-  map.
+  works inside TREK's strict plugin sandbox. The great-circle route is drawn with
+  the **flown part solid** and the **remaining part dashed**, and the aircraft is
+  a marker **rotated to its heading**. Plus a one-tap link to a full live map.
+- **Native TREK integration:** your flights also appear on the **trip map**
+  (airport + live-aircraft markers), in the **trip PDF export**, and in the
+  **TREK calendar** with live-adjusted times — no separate app needed.
+- **Before departure:** a **boarding-time estimate**, an **inbound-aircraft**
+  read-out ("your plane is on its way, ~40 min out"), and the arrival time also
+  shown in **your own timezone**.
 - **Future flights & no mix-ups.** Flight numbers repeat every day, so the
   lookup is pinned to the booking's **date**: AeroDataBox is queried for that
   exact day, and the live adsb.fi position is only fetched inside the flight's own
@@ -70,7 +77,11 @@ with altitude and speed.
 | `db:read:trips` | Reads the reservation to auto-detect its flight number. |
 | `db:meta` | Best-effort mirror of the chosen flight number onto the reservation so other TREK surfaces can read it. |
 | `notify:send` | Sends a bell/email notification to you (only) when a tracked flight's delay, gate or status changes while TREK is open. |
+| `weather:read` | Shows the destination weather for the arrival day (host-cached forecast broker). |
 | `hook:trip-warning-provider` | Shows delayed/cancelled flights as native trip warnings in the planner. |
+| `hook:map-marker-provider` | Plots your flights' airports and live aircraft on TREK's own trip map. |
+| `hook:pdf-section-provider` | Adds a flights section to the exported trip PDF. |
+| `hook:calendar-source` | Puts your flights (with live-adjusted times) into TREK's calendar. |
 | `http:outbound` | Marks the plugin as making outbound HTTP calls. |
 | `http:outbound:aerodatabox.p.rapidapi.com` | Fetches flight schedule, status, gate and delay data from AeroDataBox. |
 | `http:outbound:opendata.adsb.fi` | Fetches the live aircraft position from the adsb.fi open-data API. |
