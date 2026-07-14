@@ -243,6 +243,8 @@ function airportBlock(block, times) {
     baggageBelt: block.baggageBelt || null,
     scheduled: times ? times.scheduled : null,
     revised: times ? times.revised : null,
+    scheduledUtc: times ? times.scheduledUtc : null,
+    revisedUtc: times ? times.revisedUtc : null,
     lat: num(loc.lat != null ? loc.lat : loc.latitude),
     lon: num(loc.lon != null ? loc.lon : loc.longitude),
   };
@@ -336,7 +338,19 @@ async function trackLeg(ctx, leg, key, win) {
       };
     }
   }
-  return Object.assign({}, leg, { status, live: live.data, weather, errors });
+  // Inbound aircraft: before departure, look up the ASSIGNED tail by registration.
+  // If it's airborne elsewhere (finishing a previous rotation) we surface where it
+  // is + how far from the departure airport — "your plane is on its way".
+  let inbound = null;
+  const notUp = status && !AIRBORNE[status.status] && status.status !== 'Arrived';
+  if (status && status.aircraftReg && notUp && win.live && !live.data) {
+    const ri = await fetchJson(ADSB_HOST + '/v2/registration/' + encodeURIComponent(status.aircraftReg), { headers: { accept: 'application/json' } });
+    if (ri.ok && ri.data && Array.isArray(ri.data.ac) && ri.data.ac.length) {
+      const a = normaliseLive(ri.data.ac[0]);
+      if (a.lat != null && !a.onGround) inbound = a;
+    }
+  }
+  return Object.assign({}, leg, { status, live: live.data, weather, inbound, errors });
 }
 
 // --- key resolution: instance-wide setting (admin) > in-widget stored key ---
@@ -490,20 +504,56 @@ async function maybeNotify(ctx, user, rid, payload) {
   if (!prev || prev === sig) return; // baseline or nothing changed
   let prevArr = []; try { prevArr = JSON.parse(prev); } catch (_e) { prevArr = []; }
   const old = {}; prevArr.forEach((o) => { old[o.n] = o; });
+  // Collect EVERY notify-worthy change across all legs (don't mask a second one),
+  // then send a single combined notification. The baseline was already advanced
+  // above, so nothing gets re-notified.
+  const msgs = [];
   for (const c of cur) {
     const o = old[c.n] || {};
     let msg = null;
     if ((c.st === 'Canceled' || c.st === 'Cancelled') && o.st !== c.st) msg = 'Flug annulliert';
     else if (c.st === 'Diverted' && o.st !== c.st) msg = 'Flug umgeleitet';
-    else if (c.d != null && c.d >= 15 && c.d !== o.d) msg = 'Verspaetung: +' + c.d + ' min';
-    else if ((c.dg || c.g) && (c.dg || c.g) !== (o.dg || o.g)) msg = 'Gate: ' + (c.dg || c.g);
+    else if (c.d != null && c.d >= 15 && c.d !== o.d) msg = 'Verspaetung +' + c.d + ' min';
+    else if ((c.dg || c.g) && (c.dg || c.g) !== (o.dg || o.g)) msg = 'Gate ' + (c.dg || c.g);
     else if (c.st === 'Departed' && o.st !== c.st) msg = 'Gestartet';
     else if (c.st === 'Arrived' && o.st !== c.st) msg = 'Gelandet';
-    if (msg) {
-      await attempt(() => ctx.notify.send({ title: withSpaceNum(c.n), body: msg, scope: 'user', targetId: user.id }));
-      break;
-    }
+    if (msg) msgs.push({ n: c.n, msg: msg });
   }
+  if (msgs.length === 1) {
+    await attempt(() => ctx.notify.send({ title: withSpaceNum(msgs[0].n), body: msgs[0].msg, scope: 'user', targetId: user.id }));
+  } else if (msgs.length > 1) {
+    const body = msgs.map((m) => withSpaceNum(m.n) + ': ' + m.msg).join(' · ').slice(0, 990);
+    await attempt(() => ctx.notify.send({ title: 'Flug-Updates', body: body, scope: 'user', targetId: user.id }));
+  }
+}
+
+function toIsoUtc(s) {
+  if (!s) return null;
+  let t = String(s).replace(' ', 'T');
+  if (!/[zZ]$|[+-]\d\d:?\d\d$/.test(t)) t += 'Z';
+  return t;
+}
+function hhmm(s) { const m = String(s || '').match(/(\d{1,2}):(\d{2})/); return m ? (m[1].length < 2 ? '0' : '') + m[1] + ':' + m[2] : ''; }
+
+// Record the acting user's flights (UTC times) so the userless calendarSource
+// hook can surface them per-user. Keyed by (user, reservation).
+async function recordUserFlight(ctx, user, tripId, rid, payload) {
+  if (!user || !user.id || !payload) return;
+  const uid = String(user.id);
+  const events = [];
+  if (payload.applicable !== false && Array.isArray(payload.legs)) {
+    payload.legs.forEach((l, i) => {
+      const s = l.status; if (!s) return;
+      const start = toIsoUtc((s.departure && (s.departure.scheduledUtc || s.departure.revisedUtc)) || null);
+      const end = toIsoUtc((s.arrival && (s.arrival.revisedUtc || s.arrival.scheduledUtc)) || null);
+      if (!start || !end) return;
+      const from = l.from || (s.departure && s.departure.iata) || '';
+      const to = l.to || (s.arrival && s.arrival.iata) || '';
+      events.push({ id: 'ft-' + rid + '-' + i, title: withSpaceNum(l.number) + (from && to ? ' ' + from + '→' + to : ''), start: start, end: end });
+    });
+  }
+  if (events.length) await attempt(() => ctx.db.exec('INSERT OR REPLACE INTO cal_events (uid, rid, trip_id, data, updated_at) VALUES (?, ?, ?, ?, ?)', uid, String(rid), tripId != null ? String(tripId) : null, JSON.stringify(events), Date.now()));
+  else await attempt(() => ctx.db.exec('DELETE FROM cal_events WHERE uid = ? AND rid = ?', uid, String(rid)));
 }
 
 // --- warning provider (userless): surfaces delays/cancellations in the planner
@@ -532,6 +582,68 @@ async function getTripWarnings(tripId, ctx) {
   return out.slice(0, 12);
 }
 
+// Markers on TREK's own trip map (userless, per-trip): departure/arrival airports
+// and the live aircraft, from the freshest cache.
+async function getTripMarkers(tripId, ctx) {
+  const out = [];
+  const rows = await attempt(() => ctx.db.query('SELECT reservation_id, payload, fetched_at FROM cache WHERE trip_id = ?', String(tripId)), []);
+  const now = Date.now();
+  for (const r of rows || []) {
+    if (now - Number(r.fetched_at) > 6 * 3600 * 1000) continue;
+    let p; try { p = JSON.parse(r.payload); } catch (_e) { continue; }
+    if (!p || p.applicable === false || !Array.isArray(p.legs)) continue;
+    const rid = r.reservation_id;
+    p.legs.forEach((l, i) => {
+      const s = l.status, num = withSpaceNum(l.number);
+      if (s && s.departure && s.departure.lat != null && s.departure.lon != null) out.push({ id: 'ft-' + rid + '-' + i + '-d', lat: s.departure.lat, lng: s.departure.lon, label: s.departure.iata || '', popupText: num + ' — ' + (s.departure.name || s.departure.iata || '') });
+      if (s && s.arrival && s.arrival.lat != null && s.arrival.lon != null) out.push({ id: 'ft-' + rid + '-' + i + '-a', lat: s.arrival.lat, lng: s.arrival.lon, label: s.arrival.iata || '', popupText: num + ' — ' + (s.arrival.name || s.arrival.iata || '') });
+      if (l.live && l.live.lat != null && !l.live.onGround) out.push({ id: 'ft-' + rid + '-' + i + '-p', lat: l.live.lat, lng: l.live.lon, label: num, popupText: (l.live.desc || l.live.type || 'Aircraft') + (l.live.altBaro != null && l.live.altBaro !== 'ground' ? ' · ' + Math.round(l.live.altBaro) + ' ft' : ''), icon: 'plane', tone: 'accent' });
+    });
+    if (out.length >= 180) break;
+  }
+  return out.slice(0, 180);
+}
+
+// A section for the exported trip PDF (userless, per-trip).
+async function getTripPdf(tripId, ctx) {
+  const rows = await attempt(() => ctx.db.query('SELECT payload, fetched_at FROM cache WHERE trip_id = ?', String(tripId)), []);
+  const now = Date.now();
+  const body = [];
+  for (const r of rows || []) {
+    if (now - Number(r.fetched_at) > 24 * 3600 * 1000) continue;
+    let p; try { p = JSON.parse(r.payload); } catch (_e) { continue; }
+    if (!p || p.applicable === false || !Array.isArray(p.legs)) continue;
+    p.legs.forEach((l) => {
+      const s = l.status;
+      const from = l.from || (s && s.departure && s.departure.iata) || '';
+      const to = l.to || (s && s.arrival && s.arrival.iata) || '';
+      const dep = hhmm((s && s.departure && (s.departure.revised || s.departure.scheduled)) || l.depTime || '');
+      const arrT = hhmm((s && s.arrival && (s.arrival.revised || s.arrival.scheduled)) || l.arrTime || '');
+      body.push([withSpaceNum(l.number), (from && to ? from + ' → ' + to : (from || to || '')), dep, arrT, (s && s.status) || '']);
+    });
+    if (body.length >= 50) break;
+  }
+  if (!body.length) return [];
+  return [{ title: 'Flights', table: { headers: ['Flight', 'Route', 'Departure', 'Arrival', 'Status'], rows: body } }];
+}
+
+// The acting user's flight events for TREK's calendar (userless; reads what the
+// user's own views recorded in cal_events).
+async function getUserCalendar(userId, start, end, ctx) {
+  const rows = await attempt(() => ctx.db.query('SELECT data FROM cal_events WHERE uid = ?', String(userId)), []);
+  const s = Date.parse(start), e = Date.parse(end), out = [];
+  for (const r of rows || []) {
+    let evs; try { evs = JSON.parse(r.data); } catch (_e) { continue; }
+    (evs || []).forEach((ev) => {
+      const es = Date.parse(ev.start), ee = Date.parse(ev.end);
+      if (isNaN(es) || isNaN(ee)) return;
+      if (isNaN(s) || isNaN(e) || (ee >= s && es <= e)) out.push({ id: ev.id, title: ev.title, start: ev.start, end: ev.end, allDay: false });
+    });
+    if (out.length >= 200) break;
+  }
+  return out.slice(0, 200);
+}
+
 function json(status, body) {
   return { status, headers: { 'content-type': 'application/json', 'cache-control': 'no-store' }, body: JSON.stringify(body) };
 }
@@ -558,16 +670,25 @@ module.exports = definePlugin({
     await ctx.db.migrate('004_cache_trip', 'ALTER TABLE cache ADD COLUMN trip_id TEXT');
     await ctx.db.migrate('005_notif',
       'CREATE TABLE IF NOT EXISTS notif_state (rid TEXT, uid TEXT, sig TEXT, PRIMARY KEY (rid, uid))');
+    await ctx.db.migrate('006_cal',
+      'CREATE TABLE IF NOT EXISTS cal_events (uid TEXT, rid TEXT, trip_id TEXT, data TEXT, updated_at INTEGER, PRIMARY KEY (uid, rid))');
     ctx.log.info('flight-tracker loaded');
   },
 
   hooks: {
-    // Native TREK trip warnings for delays/cancellations, shown when a member
-    // opens the trip. Userless + fail-safe; reads only the freshest cache.
+    // All userless + fail-safe; they read only the plugin's own freshest cache /
+    // per-user event store (populated when a member views the widget).
     warningProvider: {
-      async getWarnings(tripId, ctx) {
-        return attempt(() => getTripWarnings(tripId, ctx), []);
-      },
+      async getWarnings(tripId, ctx) { return attempt(() => getTripWarnings(tripId, ctx), []); },
+    },
+    mapMarkerProvider: {
+      async getMarkers(tripId, ctx) { return attempt(() => getTripMarkers(tripId, ctx), []); },
+    },
+    pdfSectionProvider: {
+      async getSections(tripId, ctx) { return attempt(() => getTripPdf(tripId, ctx), []); },
+    },
+    calendarSource: {
+      async getEvents(userId, start, end, ctx) { return attempt(() => getUserCalendar(userId, start, end, ctx), []); },
     },
   },
 
@@ -577,7 +698,10 @@ module.exports = definePlugin({
         const p = readParams(req);
         if (!p.reservationId) return json(400, { error: 'reservationId required' });
         const payload = await cachedPayload(ctx, p.tripId, String(p.reservationId), false);
-        if (!payload.cached) await attempt(() => maybeNotify(ctx, req.user, String(p.reservationId), payload));
+        if (!payload.cached) {
+          await attempt(() => maybeNotify(ctx, req.user, String(p.reservationId), payload));
+          await attempt(() => recordUserFlight(ctx, req.user, p.tripId, String(p.reservationId), payload));
+        }
         return json(200, payload);
       } },
 
@@ -587,6 +711,7 @@ module.exports = definePlugin({
         if (!p.reservationId) return json(400, { error: 'reservationId required' });
         const payload = await cachedPayload(ctx, p.tripId, String(p.reservationId), true);
         await attempt(() => maybeNotify(ctx, req.user, String(p.reservationId), payload));
+        await attempt(() => recordUserFlight(ctx, req.user, p.tripId, String(p.reservationId), payload));
         return json(200, payload);
       } },
 
