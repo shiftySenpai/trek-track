@@ -357,17 +357,40 @@ async function trackLeg(ctx, leg, key, win) {
 // Both are instance-wide (shared by all users): ctx.config is the admin's
 // Admin -> Plugins setting; the kv row is what the in-widget field writes.
 
-async function getKey(ctx) {
-  if (ctx.config && ctx.config.aerodatabox_key) return String(ctx.config.aerodatabox_key);
-  const rows = await attempt(() => ctx.db.query("SELECT v FROM kv WHERE k = 'aerodatabox_key'"), []);
-  if (rows && rows[0] && rows[0].v) return String(rows[0].v);
-  return '';
+// The AeroDataBox key is instance-wide (shared by all users). It can live in
+// two places: the admin-managed instance config (ctx.config, set via TREK's
+// admin API) which always wins, or — because some TREK builds expose no admin
+// settings form and don't reliably report admin status to plugin routes — a
+// key set straight from the widget, stored in kv together with the id of
+// whoever set it (`aerodatabox_key_owner`).
+async function keyState(ctx) {
+  if (ctx.config && ctx.config.aerodatabox_key) return { key: String(ctx.config.aerodatabox_key), owner: 'config', managed: true };
+  const rows = await attempt(() => ctx.db.query("SELECT k, v FROM kv WHERE k IN ('aerodatabox_key','aerodatabox_key_owner')"), []);
+  let key = '', owner = null;
+  for (const r of rows || []) {
+    if (r.k === 'aerodatabox_key') key = r.v != null ? String(r.v) : '';
+    else if (r.k === 'aerodatabox_key_owner') owner = r.v != null ? String(r.v) : null;
+  }
+  return { key, owner, managed: false };
 }
 
-// The in-widget key is instance-wide, so only an admin may set it. TREK's route
-// user carries `isAdmin` (see server-api); tolerate a snake_case runtime too so
-// a real admin is never wrongly refused.
+async function getKey(ctx) { return (await keyState(ctx)).key; }
+
+// TREK's route user carries `isAdmin` (see server-api); tolerate a snake_case
+// runtime too. But we do NOT rely on it alone: because admin status isn't
+// dependable on plugin routes, the key is settable by (a) a detected admin,
+// (b) anyone when no key is set yet (bootstrap), or (c) whoever set the
+// current key. Once set it can't be clobbered by an unrelated user.
 function isAdminUser(u) { return !!(u && (u.isAdmin || u.is_admin)); }
+function uidOf(u) { return u && u.id != null ? String(u.id) : null; }
+async function canSetKey(ctx, user) {
+  if (isAdminUser(user)) return true;
+  const st = await keyState(ctx);
+  if (!st.key) return true;              // no key yet — anyone may bootstrap it
+  if (st.managed) return false;          // admin-managed via config — admins only
+  const uid = uidOf(user);
+  return !!(uid && st.owner && st.owner === uid);
+}
 
 // --- core: build the combined payload for a reservation ----------------------
 
@@ -707,7 +730,7 @@ module.exports = definePlugin({
           await attempt(() => maybeNotify(ctx, req.user, String(p.reservationId), payload));
           await attempt(() => recordUserFlight(ctx, req.user, p.tripId, String(p.reservationId), payload));
         }
-        payload.canSetKey = isAdminUser(req.user); // per-request, not cached
+        payload.canSetKey = await canSetKey(ctx, req.user); // per-request, not cached
         return json(200, payload);
       } },
 
@@ -718,7 +741,7 @@ module.exports = definePlugin({
         const payload = await cachedPayload(ctx, p.tripId, String(p.reservationId), true);
         await attempt(() => maybeNotify(ctx, req.user, String(p.reservationId), payload));
         await attempt(() => recordUserFlight(ctx, req.user, p.tripId, String(p.reservationId), payload));
-        payload.canSetKey = isAdminUser(req.user); // per-request, not cached
+        payload.canSetKey = await canSetKey(ctx, req.user); // per-request, not cached
         return json(200, payload);
       } },
 
@@ -739,20 +762,26 @@ module.exports = definePlugin({
         }
         await attempt(() => ctx.db.exec('DELETE FROM cache WHERE reservation_id = ?', rid));
         const payload = await cachedPayload(ctx, p.tripId, rid, true, number);
-        payload.canSetKey = isAdminUser(req.user); // per-request, not cached
+        payload.canSetKey = await canSetKey(ctx, req.user); // per-request, not cached
         return json(200, payload);
       } },
 
-    // In-widget fallback for the AeroDataBox key (stored in the plugin's own DB,
-    // instance-wide). Admin-only: the key is shared by every user, so only an
-    // admin may set or clear it (mirrors TREK's admin-owned instance settings).
+    // In-widget entry for the instance-wide AeroDataBox key (stored in the
+    // plugin's own DB). Gated by canSetKey(): a detected admin, or — since admin
+    // status isn't dependable on plugin routes and some TREK builds show no
+    // settings form — anyone bootstrapping the first key, or the user who set
+    // the current one. The setter's id is recorded so it can't be clobbered.
     { method: 'POST', path: '/key', auth: true,
       async handler(req, ctx) {
-        if (!isAdminUser(req.user)) return json(403, { error: 'admin only' });
+        if (!(await canSetKey(ctx, req.user))) return json(403, { error: 'not allowed' });
         const p = readParams(req);
         const val = (p.apiKey == null ? '' : String(p.apiKey)).trim();
-        if (val) await ctx.db.exec("INSERT OR REPLACE INTO kv (k, v) VALUES ('aerodatabox_key', ?)", val);
-        else await ctx.db.exec("DELETE FROM kv WHERE k = 'aerodatabox_key'");
+        if (val) {
+          await ctx.db.exec("INSERT OR REPLACE INTO kv (k, v) VALUES ('aerodatabox_key', ?)", val);
+          await ctx.db.exec("INSERT OR REPLACE INTO kv (k, v) VALUES ('aerodatabox_key_owner', ?)", uidOf(req.user) || '');
+        } else {
+          await ctx.db.exec("DELETE FROM kv WHERE k IN ('aerodatabox_key','aerodatabox_key_owner')");
+        }
         await attempt(() => ctx.db.exec('DELETE FROM cache'));
         return json(200, { ok: true, hasKey: !!val });
       } },

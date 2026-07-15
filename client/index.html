@@ -136,8 +136,10 @@
     .ft-editrow input { flex: 1; min-width: 0; }
     .ft-empty { color: var(--text-muted); font-size: 12px; }
     .ft-hint { color: var(--text-faint); font-size: 11px; margin-top: 8px; }
-    .ft-keyadmin { display: flex; align-items: flex-start; gap: 6px; line-height: 1.4; }
-    .ft-keyadmin svg { flex: 0 0 auto; width: 13px; height: 13px; margin-top: 1px; opacity: .8; }
+    .ft-keyadmin, .ft-keyactive { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; line-height: 1.4; }
+    .ft-keyadmin svg, .ft-keyactive svg { flex: 0 0 auto; width: 13px; height: 13px; opacity: .8; }
+    .ft-linkbtn { background: none; border: 0; padding: 0; margin: 0; font: inherit; color: var(--accent); cursor: pointer; }
+    .ft-linkbtn:hover { text-decoration: underline; }
     .ft-err { color: var(--danger,#dc2626); font-size: 11px; margin-top: 6px; }
     .ft-keyrow { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border-faint); }
     .ft-keytoggle { background: none; border: none; color: var(--text-faint); font-size: 11px; cursor: pointer; padding: 3px 0; display: inline-flex; align-items: center; gap: 5px; }
@@ -306,6 +308,7 @@
         departsIn: 'Departs in', soon: 'Live status appears ~48 h before departure.', day: 'day', days: 'days',
         h: 'h', min: 'min', remaining: 'in', nosignal: 'Position temporarily out of ADS-B coverage',
         inbound: 'Aircraft inbound', boarding: 'Boarding', yourtime: 'your time', couldnt: "Couldn't read a flight number — enter it:",
+        keyactive: 'AeroDataBox key active', keyreplace: 'Replace', keyremove: 'Remove', keycleared: 'Key removed', keynotallowed: 'This key was set by someone else',
         keyadmin: 'No AeroDataBox key set — a TREK admin can add it under Admin → Plugins (or here) to unlock schedule, gate and delay data.' },
       de: { noflight: 'Keine Flugnummer mit dieser Buchung verknüpft.', link: 'Verknüpfen', enter: 'Flugnr. (z.B. LH400)',
         save: 'Speichern', change: 'Flugnummer ändern', redetect: 'Flüge neu aus Buchung erkennen', redetected: 'Aus Buchung neu erkannt',
@@ -319,6 +322,7 @@
         departsIn: 'Abflug in', soon: 'Live-Status erscheint ~48 h vor Abflug.', day: 'Tag', days: 'Tage',
         h: 'Std', min: 'Min', remaining: 'noch', nosignal: 'Position gerade ohne ADS-B-Empfang',
         inbound: 'Flieger im Anflug', boarding: 'Boarding', yourtime: 'deine Zeit', couldnt: 'Flugnummer nicht erkannt — bitte eingeben:',
+        keyactive: 'AeroDataBox-Key aktiv', keyreplace: 'Ersetzen', keyremove: 'Entfernen', keycleared: 'Key entfernt', keynotallowed: 'Dieser Key wurde von jemand anderem gesetzt',
         keyadmin: 'Kein AeroDataBox-Key gesetzt — ein TREK-Admin kann ihn unter Admin → Plugins (oder hier) hinterlegen, für Fahrplan, Gate und Verspätung.' }
     };
     var SL = {
@@ -678,20 +682,20 @@
           '<button class="trek-btn trek-btn--primary" id="ft-save">' + esc(L.save) + '</button></div>';
       }
 
-      // key field — the AeroDataBox key is instance-wide, so only an admin may
-      // set it. Visibility is driven by the SERVER's canSetKey (same source as
-      // the POST /key gate), never the client's own isAdmin, so the input never
-      // shows to someone the server will reject. Non-admins get a hint instead.
-      if (!data.hasKey && data.applicable !== false && legs.length) {
-        if (data.canSetKey) {
-          html += '<div class="ft-keyrow">';
-          html += keyOpen
-            ? '<div class="ft-editrow"><input class="trek-input" id="ft-keyin" type="password" placeholder="' + esc(L.keyph) + '" aria-label="' + esc(L.keyph) + '" /><button class="trek-btn trek-btn--primary" id="ft-keysave">' + esc(L.save) + '</button></div><p class="ft-hint">' + esc(L.keyhint) + '</p>'
-            : '<button class="ft-keytoggle" id="ft-keyt">' + svg('key') + ' ' + esc(L.keyadd) + '</button>';
-          html += '</div>';
+      // AeroDataBox key entry. The key is instance-wide; the SERVER decides who
+      // may set it (canSetKey — a detected admin, anyone bootstrapping the first
+      // key, or whoever set the current one) and drives what we render, so the
+      // controls never appear for someone the server would reject.
+      if (data.applicable !== false && legs.length && data.canSetKey) {
+        html += '<div class="ft-keyrow">';
+        if (keyOpen) {
+          html += '<div class="ft-editrow"><input class="trek-input" id="ft-keyin" type="password" placeholder="' + esc(L.keyph) + '" aria-label="' + esc(L.keyph) + '" /><button class="trek-btn trek-btn--primary" id="ft-keysave">' + esc(L.save) + '</button></div><p class="ft-hint">' + esc(L.keyhint) + '</p>';
+        } else if (!data.hasKey) {
+          html += '<button class="ft-keytoggle" id="ft-keyt">' + svg('key') + ' ' + esc(L.keyadd) + '</button>';
         } else {
-          html += '<div class="ft-keyrow"><p class="ft-hint ft-keyadmin">' + svg('key') + ' ' + esc(L.keyadmin) + '</p></div>';
+          html += '<p class="ft-hint ft-keyactive">' + svg('key') + ' ' + esc(L.keyactive) + ' · <button type="button" class="ft-linkbtn" id="ft-keyt">' + esc(L.keyreplace) + '</button> · <button type="button" class="ft-linkbtn" id="ft-keyrm">' + esc(L.keyremove) + '</button></p>';
         }
+        html += '</div>';
       }
 
       if (legs.length) {
@@ -714,6 +718,7 @@
       var r = document.getElementById('ft-refresh'); if (r) r.addEventListener('click', function () { doRefresh(r); });
       document.querySelectorAll('#ft-redetect').forEach(function (rd) { rd.addEventListener('click', function () { redetect(rd); }); });
       var kt = document.getElementById('ft-keyt'); if (kt) kt.addEventListener('click', function () { keyOpen = true; render(last); });
+      var krm = document.getElementById('ft-keyrm'); if (krm) krm.addEventListener('click', function () { saveKey(''); });
       var ks = document.getElementById('ft-keysave'), ki = document.getElementById('ft-keyin');
       if (ks && ki) { var gk = function () { saveKey(ki.value); }; ks.addEventListener('click', gk); ki.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); gk(); } }); }
       document.querySelectorAll('.ft-collapsed[data-exp]').forEach(function (c) { c.addEventListener('click', function () { expanded[c.getAttribute('data-exp')] = true; render(last); }); });
@@ -721,7 +726,7 @@
     }
 
     async function saveNumber(v) { if (busy) return; busy = true; try { var d = await window.trek.invoke('/set', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId, flightNumber: v } }); editing = false; last = d; render(d); } catch (e) { window.trek.notify('error', e.message || 'error'); } busy = false; }
-    async function saveKey(v) { if (busy) return; busy = true; try { await window.trek.invoke('/key', { method: 'POST', body: { apiKey: v } }); keyOpen = false; window.trek.notify('success', L.keysaved); await doRefresh(null); } catch (e) { window.trek.notify('error', (e && e.code === 403) ? 'admin only' : (e.message || 'error')); } busy = false; }
+    async function saveKey(v) { if (busy) return; busy = true; var clearing = !String(v || '').trim(); try { await window.trek.invoke('/key', { method: 'POST', body: { apiKey: v } }); keyOpen = false; window.trek.notify('success', clearing ? L.keycleared : L.keysaved); await doRefresh(null); } catch (e) { window.trek.notify('error', (e && e.code === 403) ? L.keynotallowed : (e.message || 'error')); } busy = false; }
     async function redetect(btn) { if (busy) return; busy = true; if (btn) { var v = btn.querySelector('svg'); if (v) v.classList.add('ft-spin'); } try { var d = await window.trek.invoke('/set', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId, flightNumber: '' } }); editing = false; expanded = {}; last = d; render(d); window.trek.notify('success', L.redetected); } catch (e) { window.trek.notify('error', e.message || 'error'); } busy = false; }
     async function doRefresh(btn) { if (btn) { var v = btn.querySelector('svg'); if (v) v.classList.add('ft-spin'); } try { var d = await window.trek.invoke('/refresh', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId } }); last = d; render(d); } catch (e) { window.trek.notify('error', e.message || 'error'); if (btn) { var v2 = btn.querySelector('svg'); if (v2) v2.classList.remove('ft-spin'); } } }
 
