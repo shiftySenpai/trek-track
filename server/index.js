@@ -471,7 +471,12 @@ async function cachedPayload(ctx, tripId, reservationId, force, forcedNumber) {
     if (rows && rows[0]) {
       try {
         const cached = JSON.parse(rows[0].payload);
-        if ((Date.now() - Number(rows[0].fetched_at)) < ttlFor(cached)) return Object.assign(cached, { cached: true });
+        const fresh = (Date.now() - Number(rows[0].fetched_at)) < ttlFor(cached);
+        // A cached payload built before/after the admin key was set/removed is
+        // stale even within TTL: its hasKey (and thus its schedule data) no
+        // longer matches reality. Rebuild when the key's presence has flipped.
+        const keyNow = !!(await getKey(ctx));
+        if (fresh && !!cached.hasKey === keyNow) return Object.assign(cached, { cached: true });
       } catch (_e) { /* refetch */ }
     }
   }
