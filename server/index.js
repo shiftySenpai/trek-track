@@ -364,6 +364,11 @@ async function getKey(ctx) {
   return '';
 }
 
+// The in-widget key is instance-wide, so only an admin may set it. TREK's route
+// user carries `isAdmin` (see server-api); tolerate a snake_case runtime too so
+// a real admin is never wrongly refused.
+function isAdminUser(u) { return !!(u && (u.isAdmin || u.is_admin)); }
+
 // --- core: build the combined payload for a reservation ----------------------
 
 async function readReservation(ctx, tripId, reservationId) {
@@ -702,6 +707,7 @@ module.exports = definePlugin({
           await attempt(() => maybeNotify(ctx, req.user, String(p.reservationId), payload));
           await attempt(() => recordUserFlight(ctx, req.user, p.tripId, String(p.reservationId), payload));
         }
+        payload.canSetKey = isAdminUser(req.user); // per-request, not cached
         return json(200, payload);
       } },
 
@@ -712,6 +718,7 @@ module.exports = definePlugin({
         const payload = await cachedPayload(ctx, p.tripId, String(p.reservationId), true);
         await attempt(() => maybeNotify(ctx, req.user, String(p.reservationId), payload));
         await attempt(() => recordUserFlight(ctx, req.user, p.tripId, String(p.reservationId), payload));
+        payload.canSetKey = isAdminUser(req.user); // per-request, not cached
         return json(200, payload);
       } },
 
@@ -731,7 +738,9 @@ module.exports = definePlugin({
           await attempt(() => ctx.meta.delete('reservation', Number(rid), 'flight_number'));
         }
         await attempt(() => ctx.db.exec('DELETE FROM cache WHERE reservation_id = ?', rid));
-        return json(200, await cachedPayload(ctx, p.tripId, rid, true, number));
+        const payload = await cachedPayload(ctx, p.tripId, rid, true, number);
+        payload.canSetKey = isAdminUser(req.user); // per-request, not cached
+        return json(200, payload);
       } },
 
     // In-widget fallback for the AeroDataBox key (stored in the plugin's own DB,
@@ -739,7 +748,7 @@ module.exports = definePlugin({
     // admin may set or clear it (mirrors TREK's admin-owned instance settings).
     { method: 'POST', path: '/key', auth: true,
       async handler(req, ctx) {
-        if (!req.user || !req.user.isAdmin) return json(403, { error: 'admin only' });
+        if (!isAdminUser(req.user)) return json(403, { error: 'admin only' });
         const p = readParams(req);
         const val = (p.apiKey == null ? '' : String(p.apiKey)).trim();
         if (val) await ctx.db.exec("INSERT OR REPLACE INTO kv (k, v) VALUES ('aerodatabox_key', ?)", val);

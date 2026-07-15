@@ -49,9 +49,11 @@ actual aircraft position from the free **adsb.fi** open-data network.
   flights show a countdown plus the booked route/times and light up
   automatically as departure approaches.
 - **Works with or without an API key.** The AeroDataBox key is **instance-wide**:
-  an admin sets it once (Admin → Plugins) for all users, or you paste it into the
-  widget. Without a key you still get the free adsb.fi live position. Results are
-  cached briefly so the public rate limits are respected.
+  an admin sets it once — either under **Admin → Plugins** or straight from the
+  widget (an admin-only "Add AeroDataBox key" box; non-admins simply see a hint
+  pointing to their admin) — and it then applies to all users. Without a key you
+  still get the free adsb.fi live position. Results are cached briefly so the
+  public rate limits are respected.
 - **Change alerts.** When a tracked flight is delayed, cancelled, changes gate or
   departs/arrives, delayed/cancelled flights appear as **native trip warnings**
   in the planner, and — while you have TREK open — you get a deduplicated
@@ -91,8 +93,10 @@ with altitude and speed.
 1. Install and activate the plugin, then approve its permissions.
 2. **Optional but recommended:** get a free AeroDataBox key at
    `rapidapi.com/aedbx-aedbx/api/aerodatabox` and add it **instance-wide** — an
-   admin sets the `aerodatabox_key` field under **Admin → Plugins** (applies to
-   all users), or paste it into the widget's "Add AeroDataBox key" box. This
+   admin sets the `aerodatabox_key` field under **Admin → Plugins**, or (as an
+   admin) pastes it into the widget's "Add AeroDataBox key" box; either way it
+   applies to all users. Setting the key is **admin-only** because it is shared
+   instance-wide — non-admin users see a short hint pointing to their admin. This
    unlocks the schedule, gate and delay data. Without a key, only the live
    adsb.fi position is shown.
 3. Open a trip, expand a flight reservation, and the tracker appears beneath it.

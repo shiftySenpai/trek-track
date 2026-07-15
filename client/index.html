@@ -136,6 +136,8 @@
     .ft-editrow input { flex: 1; min-width: 0; }
     .ft-empty { color: var(--text-muted); font-size: 12px; }
     .ft-hint { color: var(--text-faint); font-size: 11px; margin-top: 8px; }
+    .ft-keyadmin { display: flex; align-items: flex-start; gap: 6px; line-height: 1.4; }
+    .ft-keyadmin svg { flex: 0 0 auto; width: 13px; height: 13px; margin-top: 1px; opacity: .8; }
     .ft-err { color: var(--danger,#dc2626); font-size: 11px; margin-top: 6px; }
     .ft-keyrow { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border-faint); }
     .ft-keytoggle { background: none; border: none; color: var(--text-faint); font-size: 11px; cursor: pointer; padding: 3px 0; display: inline-flex; align-items: center; gap: 5px; }
@@ -303,7 +305,8 @@
         keyph: 'Paste RapidAPI key', keysaved: 'Key saved', detected: 'Detected from booking',
         departsIn: 'Departs in', soon: 'Live status appears ~48 h before departure.', day: 'day', days: 'days',
         h: 'h', min: 'min', remaining: 'in', nosignal: 'Position temporarily out of ADS-B coverage',
-        inbound: 'Aircraft inbound', boarding: 'Boarding', yourtime: 'your time', couldnt: "Couldn't read a flight number — enter it:" },
+        inbound: 'Aircraft inbound', boarding: 'Boarding', yourtime: 'your time', couldnt: "Couldn't read a flight number — enter it:",
+        keyadmin: 'No AeroDataBox key set — a TREK admin can add it under Admin → Plugins (or here) to unlock schedule, gate and delay data.' },
       de: { noflight: 'Keine Flugnummer mit dieser Buchung verknüpft.', link: 'Verknüpfen', enter: 'Flugnr. (z.B. LH400)',
         save: 'Speichern', change: 'Flugnummer ändern', redetect: 'Flüge neu aus Buchung erkennen', redetected: 'Aus Buchung neu erkannt',
         dep: 'Abflug', arr: 'Ankunft', terminal: 'Terminal', gate: 'Gate', belt: 'Band', seat: 'Sitz',
@@ -315,7 +318,8 @@
         keyph: 'RapidAPI-Key einfügen', keysaved: 'Key gespeichert', detected: 'Aus Buchung erkannt',
         departsIn: 'Abflug in', soon: 'Live-Status erscheint ~48 h vor Abflug.', day: 'Tag', days: 'Tage',
         h: 'Std', min: 'Min', remaining: 'noch', nosignal: 'Position gerade ohne ADS-B-Empfang',
-        inbound: 'Flieger im Anflug', boarding: 'Boarding', yourtime: 'deine Zeit', couldnt: 'Flugnummer nicht erkannt — bitte eingeben:' }
+        inbound: 'Flieger im Anflug', boarding: 'Boarding', yourtime: 'deine Zeit', couldnt: 'Flugnummer nicht erkannt — bitte eingeben:',
+        keyadmin: 'Kein AeroDataBox-Key gesetzt — ein TREK-Admin kann ihn unter Admin → Plugins (oder hier) hinterlegen, für Fahrplan, Gate und Verspätung.' }
     };
     var SL = {
       en: { Expected: 'Scheduled', EnRoute: 'En route', Departed: 'Departed', Arrived: 'Landed', Delayed: 'Delayed', Canceled: 'Cancelled', Cancelled: 'Cancelled', Diverted: 'Diverted', Boarding: 'Boarding', GateClosed: 'Gate closed', CheckIn: 'Check-in', Approaching: 'Approaching', Unknown: 'Scheduled' },
@@ -674,13 +678,20 @@
           '<button class="trek-btn trek-btn--primary" id="ft-save">' + esc(L.save) + '</button></div>';
       }
 
-      // key field — admin only (the key is instance-wide)
-      if (!data.hasKey && ctx.user && ctx.user.isAdmin) {
-        html += '<div class="ft-keyrow">';
-        html += keyOpen
-          ? '<div class="ft-editrow"><input class="trek-input" id="ft-keyin" type="password" placeholder="' + esc(L.keyph) + '" aria-label="' + esc(L.keyph) + '" /><button class="trek-btn trek-btn--primary" id="ft-keysave">' + esc(L.save) + '</button></div><p class="ft-hint">' + esc(L.keyhint) + '</p>'
-          : '<button class="ft-keytoggle" id="ft-keyt">' + svg('key') + ' ' + esc(L.keyadd) + '</button>';
-        html += '</div>';
+      // key field — the AeroDataBox key is instance-wide, so only an admin may
+      // set it. Visibility is driven by the SERVER's canSetKey (same source as
+      // the POST /key gate), never the client's own isAdmin, so the input never
+      // shows to someone the server will reject. Non-admins get a hint instead.
+      if (!data.hasKey && data.applicable !== false && legs.length) {
+        if (data.canSetKey) {
+          html += '<div class="ft-keyrow">';
+          html += keyOpen
+            ? '<div class="ft-editrow"><input class="trek-input" id="ft-keyin" type="password" placeholder="' + esc(L.keyph) + '" aria-label="' + esc(L.keyph) + '" /><button class="trek-btn trek-btn--primary" id="ft-keysave">' + esc(L.save) + '</button></div><p class="ft-hint">' + esc(L.keyhint) + '</p>'
+            : '<button class="ft-keytoggle" id="ft-keyt">' + svg('key') + ' ' + esc(L.keyadd) + '</button>';
+          html += '</div>';
+        } else {
+          html += '<div class="ft-keyrow"><p class="ft-hint ft-keyadmin">' + svg('key') + ' ' + esc(L.keyadmin) + '</p></div>';
+        }
       }
 
       if (legs.length) {
