@@ -48,12 +48,13 @@ actual aircraft position from the free **adsb.fi** open-data network.
   delay are shown **on the ground** from ~48 h before departure; far-future
   flights show a countdown plus the booked route/times and light up
   automatically as departure approaches.
-- **Works with or without an API key.** The AeroDataBox key is **instance-wide**:
-  set it once from the widget's **"Add AeroDataBox key"** box and it applies to
-  every user. Whoever sets it "owns" it — after that only they (or a TREK admin)
-  can change or remove it, so it can't be clobbered by another user. If your TREK
-  build exposes a plugin-config form under **Admin → Plugins**, an admin can set
-  it there too. Without a key you still get the free adsb.fi live position.
+- **Works with or without an API key.** The AeroDataBox key is **instance-wide**
+  and **admin-managed**: an admin sets it once through TREK's admin-guarded
+  plugin-config API (`PUT /api/admin/plugins/flight-tracker/config`) and it
+  applies to every user. It arrives in the plugin decrypted via `ctx.config`.
+  (Setting it is genuinely admin-only — TREK's admin endpoints enforce that —
+  whereas plugin routes cannot verify admin status themselves, so there is no
+  in-widget key box.) Without a key you still get the free adsb.fi live position.
   Results are cached briefly so the public rate limits are respected.
 - **Change alerts.** When a tracked flight is delayed, cancelled, changes gate or
   departs/arrives, delayed/cancelled flights appear as **native trip warnings**
@@ -93,13 +94,19 @@ with altitude and speed.
 
 1. Install and activate the plugin, then approve its permissions.
 2. **Optional but recommended:** get a free AeroDataBox key at
-   `rapidapi.com/aedbx-aedbx/api/aerodatabox` and paste it into the widget's
-   **"Add AeroDataBox key"** box. The key is stored **instance-wide** (shared by
-   all users); whoever sets it can later change or remove it from the widget, and
-   a TREK admin can always override it. This unlocks the schedule, gate and delay
-   data. (If your TREK build shows a plugin-config form under **Admin → Plugins**,
-   an admin can set the `aerodatabox_key` there instead.) Without a key, only the
-   live adsb.fi position is shown.
+   `rapidapi.com/aedbx-aedbx/api/aerodatabox`. An admin sets it **instance-wide**
+   through TREK's admin plugin-config API — logged in as an admin, run in the
+   browser console:
+   ```js
+   await fetch('/api/admin/plugins/flight-tracker/config', {
+     method: 'PUT', credentials: 'include',
+     headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify({ aerodatabox_key: 'YOUR_RAPIDAPI_KEY' })
+   }).then(r => r.json()).then(console.log);
+   ```
+   This unlocks the schedule, gate and delay data for everyone. To remove it,
+   send `{ aerodatabox_key: '' }`. Without a key, only the live adsb.fi position
+   is shown.
 3. Open a trip, expand a flight reservation, and the tracker appears beneath it.
    The flight number(s) are detected from the booking; if not, type once to save.
 
