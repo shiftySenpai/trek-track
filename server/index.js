@@ -353,15 +353,16 @@ async function trackLeg(ctx, leg, key, win) {
   return Object.assign({}, leg, { status, live: live.data, weather, inbound, errors });
 }
 
-// --- key resolution: instance-wide setting (admin) > in-widget stored key ---
-// Both are instance-wide (shared by all users): ctx.config is the admin's
-// Admin -> Plugins setting; the kv row is what the in-widget field writes.
-
+// --- key resolution: instance-wide, admin-managed -----------------------------
+// The AeroDataBox key is an instance-wide, admin-managed setting. It is set
+// through TREK's admin-guarded plugin config API
+// (PUT /api/admin/plugins/flight-tracker/config, protected by AdminGuard) and
+// arrives here decrypted in ctx.config. This is genuine admin-only: plugin
+// routes cannot themselves verify admin status (TREK's proxy maps a
+// non-existent `is_admin` field, so req.user.isAdmin is always false), so the
+// only trustworthy admin gate is TREK's own admin endpoint.
 async function getKey(ctx) {
-  if (ctx.config && ctx.config.aerodatabox_key) return String(ctx.config.aerodatabox_key);
-  const rows = await attempt(() => ctx.db.query("SELECT v FROM kv WHERE k = 'aerodatabox_key'"), []);
-  if (rows && rows[0] && rows[0].v) return String(rows[0].v);
-  return '';
+  return (ctx.config && ctx.config.aerodatabox_key) ? String(ctx.config.aerodatabox_key) : '';
 }
 
 // --- core: build the combined payload for a reservation ----------------------
@@ -470,7 +471,12 @@ async function cachedPayload(ctx, tripId, reservationId, force, forcedNumber) {
     if (rows && rows[0]) {
       try {
         const cached = JSON.parse(rows[0].payload);
-        if ((Date.now() - Number(rows[0].fetched_at)) < ttlFor(cached)) return Object.assign(cached, { cached: true });
+        const fresh = (Date.now() - Number(rows[0].fetched_at)) < ttlFor(cached);
+        // A cached payload built before/after the admin key was set/removed is
+        // stale even within TTL: its hasKey (and thus its schedule data) no
+        // longer matches reality. Rebuild when the key's presence has flipped.
+        const keyNow = !!(await getKey(ctx));
+        if (fresh && !!cached.hasKey === keyNow) return Object.assign(cached, { cached: true });
       } catch (_e) { /* refetch */ }
     }
   }
@@ -731,21 +737,8 @@ module.exports = definePlugin({
           await attempt(() => ctx.meta.delete('reservation', Number(rid), 'flight_number'));
         }
         await attempt(() => ctx.db.exec('DELETE FROM cache WHERE reservation_id = ?', rid));
-        return json(200, await cachedPayload(ctx, p.tripId, rid, true, number));
-      } },
-
-    // In-widget fallback for the AeroDataBox key (stored in the plugin's own DB,
-    // instance-wide). Admin-only: the key is shared by every user, so only an
-    // admin may set or clear it (mirrors TREK's admin-owned instance settings).
-    { method: 'POST', path: '/key', auth: true,
-      async handler(req, ctx) {
-        if (!req.user || !req.user.isAdmin) return json(403, { error: 'admin only' });
-        const p = readParams(req);
-        const val = (p.apiKey == null ? '' : String(p.apiKey)).trim();
-        if (val) await ctx.db.exec("INSERT OR REPLACE INTO kv (k, v) VALUES ('aerodatabox_key', ?)", val);
-        else await ctx.db.exec("DELETE FROM kv WHERE k = 'aerodatabox_key'");
-        await attempt(() => ctx.db.exec('DELETE FROM cache'));
-        return json(200, { ok: true, hasKey: !!val });
+        const payload = await cachedPayload(ctx, p.tripId, rid, true, number);
+        return json(200, payload);
       } },
   ],
 });
