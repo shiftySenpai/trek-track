@@ -7,6 +7,41 @@ actual aircraft position from the free **adsb.fi** open-data network.
 
 ![screenshot](./docs/screenshot.png)
 
+## Setup
+
+1. Install and activate the plugin, then approve its permissions.
+2. Open a trip, expand a flight reservation, and the tracker appears beneath it.
+   The flight number(s) are detected from the booking; if not, type once to save.
+   The **live adsb.fi position works with no key**.
+
+### Adding the AeroDataBox key (admin) — unlocks schedule / gate / delay
+
+The key is **instance-wide and admin-only**. Because of a current TREK core bug
+([mauriceboe/TREK#1569](https://github.com/mauriceboe/TREK/issues/1569)) plugin
+routes are never told whether the caller is an admin, so the key **cannot** be
+entered in the widget yet — you would only get an *"admin only" / 403 / 404*
+error. Until that TREK fix ships, set the key through TREK's own admin-guarded
+config endpoint:
+
+1. Get a free key at `rapidapi.com/aedbx-aedbx/api/aerodatabox`.
+2. Log in as a **TREK administrator** (e.g. `admin@trek.local`), open the browser
+   dev tools (**F12**) → **Console**, paste and run:
+   ```js
+   await fetch('/api/admin/plugins/flight-tracker/config', {
+     method: 'PUT', credentials: 'include',
+     headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify({ aerodatabox_key: 'YOUR_RAPIDAPI_KEY' })
+   }).then(r => r.json()).then(console.log);
+   ```
+   A masked response like `{ config: { aerodatabox_key: '••••••••' } }` means it
+   was saved. To remove it, send `{ aerodatabox_key: '' }`.
+3. **Reload the plugin** (Admin → Plugins → deactivate → activate) so it re-reads
+   the config, then **hard-refresh** the trip tab (**Ctrl/Cmd+Shift+R**) so any
+   old cached widget is replaced. The schedule, gate and delay data then appear
+   for **all** users.
+
+Once the TREK fix is released, an in-widget key field for admins will return.
+
 ## What it does
 
 - **Reads the flight straight from the booking.** It builds the flight number
@@ -89,41 +124,6 @@ with altitude and speed.
 | `http:outbound` | Marks the plugin as making outbound HTTP calls. |
 | `http:outbound:aerodatabox.p.rapidapi.com` | Fetches flight schedule, status, gate and delay data from AeroDataBox. |
 | `http:outbound:opendata.adsb.fi` | Fetches the live aircraft position from the adsb.fi open-data API. |
-
-## Setup
-
-1. Install and activate the plugin, then approve its permissions.
-2. Open a trip, expand a flight reservation, and the tracker appears beneath it.
-   The flight number(s) are detected from the booking; if not, type once to save.
-   The **live adsb.fi position works with no key**.
-
-### Adding the AeroDataBox key (admin) — unlocks schedule / gate / delay
-
-The key is **instance-wide and admin-only**. Because of a current TREK core bug
-([mauriceboe/TREK#1569](https://github.com/mauriceboe/TREK/issues/1569)) plugin
-routes are never told whether the caller is an admin, so the key **cannot** be
-entered in the widget yet — you would only get an *"admin only" / 403 / 404*
-error. Until that TREK fix ships, set the key through TREK's own admin-guarded
-config endpoint:
-
-1. Get a free key at `rapidapi.com/aedbx-aedbx/api/aerodatabox`.
-2. Log in as a **TREK administrator** (e.g. `admin@trek.local`), open the browser
-   dev tools (**F12**) → **Console**, paste and run:
-   ```js
-   await fetch('/api/admin/plugins/flight-tracker/config', {
-     method: 'PUT', credentials: 'include',
-     headers: { 'Content-Type': 'application/json' },
-     body: JSON.stringify({ aerodatabox_key: 'YOUR_RAPIDAPI_KEY' })
-   }).then(r => r.json()).then(console.log);
-   ```
-   A masked response like `{ config: { aerodatabox_key: '••••••••' } }` means it
-   was saved. To remove it, send `{ aerodatabox_key: '' }`.
-3. **Reload the plugin** (Admin → Plugins → deactivate → activate) so it re-reads
-   the config, then **hard-refresh** the trip tab (**Ctrl/Cmd+Shift+R**) so any
-   old cached widget is replaced. The schedule, gate and delay data then appear
-   for **all** users.
-
-Once the TREK fix is released, an in-widget key field for admins will return.
 
 Data sources: [AeroDataBox](https://aerodatabox.com/) and
 [adsb.fi](https://adsb.fi/) — adsb.fi open data is for personal, non-commercial
