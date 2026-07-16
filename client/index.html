@@ -11,6 +11,10 @@
     @media (prefers-color-scheme: dark) { :root:not([data-theme]) { color-scheme: dark; --ft-surface: rgba(0,0,0,.32); --ft-surface-line: rgba(255,255,255,.06); --ft-land: rgba(255,255,255,.14); } }
     body { margin: 0; }
     #app { padding: 4px 2px; font-variant-numeric: tabular-nums; }
+    /* non-flight reservation: collapse to nothing. The host kit only reports a
+       resize when height > 0 (never 0), so instead of an empty ~8px box we shrink
+       the root to a 1px, overflow-hidden sliver — effectively invisible. */
+    :root[data-ft-empty] #app { padding: 0; height: 1px; overflow: hidden; }
     /* keep the chrome (footer, hints, empty states, inputs) aligned with panel text */
     .ft-foot, .ft-err, .ft-empty, .ft-hint, .ft-keyrow, .ft-editrow, #app > .ft-skel { padding-left: 14px; padding-right: 14px; }
     svg { flex-shrink: 0; }
@@ -641,11 +645,19 @@
       return (data.booking && data.booking.depMs && data.booking.depMs > now) ? data.booking.depMs : null;
     }
 
+    function collapseEmpty() {
+      var d = document.documentElement;
+      app.innerHTML = '';
+      d.setAttribute('data-ft-empty', '');
+      if (window.trek && window.trek.resize) { try { window.trek.resize(1); } catch (e) {} }
+    }
+
     function render(data) {
       mapLinks = [];
-      if (!ctx || !ctx.reservationId) { app.innerHTML = ''; return; }
-      if (!data) { app.innerHTML = '<div class="ft-skel big"></div><div class="ft-skel line" style="width:55%"></div>'; return; }
-      if (data.applicable === false) { app.innerHTML = ''; return; }
+      if (!ctx || !ctx.reservationId) { collapseEmpty(); return; }
+      if (!data) { document.documentElement.removeAttribute('data-ft-empty'); app.innerHTML = '<div class="ft-skel big"></div><div class="ft-skel line" style="width:55%"></div>'; return; }
+      if (data.applicable === false) { collapseEmpty(); return; }
+      document.documentElement.removeAttribute('data-ft-empty');
 
       currentPhase = (data.booking && data.booking.phase) || 'active';
       var legs = data.legs || [];
