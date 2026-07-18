@@ -218,17 +218,26 @@ async function main() {
   }
 
   const out = { nameToIata, coreToIata, iataIcao };
-  fs.writeFileSync(OUT, JSON.stringify(out) + '\n');
+  const json = JSON.stringify(out) + '\n';
 
-  // --- assert the probes ----------------------------------------------------
+  // --- assert the probes BEFORE writing -------------------------------------
+  // The probe list is a gate, so it must not leave a bad artifact behind: writing
+  // first meant a failed build still mutated the committed dataset, which a hurried
+  // `git add -A` would then commit.
   const failures = [];
   for (const [name, want] of Object.entries(PROBES)) {
     const n = norm(name);
     const got = nameToIata[n] || coreToIata[core(n)] || '(none)';
     if (got !== want) failures.push('  ' + name.padEnd(24) + ' got ' + got.padEnd(8) + ' want ' + want);
   }
+  if (failures.length) {
+    console.error('PROBE FAILURES (' + failures.length + '/' + Object.keys(PROBES).length + ') — dataset NOT written:');
+    failures.forEach((f) => console.error(f));
+    process.exit(1);
+  }
 
-  const size = fs.statSync(OUT).size;
+  fs.writeFileSync(OUT, json);
+  const size = Buffer.byteLength(json);
   console.log('sources        : openflights (tier 1-2) + vrs@' + VRS_SHA.slice(0, 7) + ' (tier 3) + ' + ovApplied + ' overrides');
   console.log('source rows    : ' + rows.length);
   console.log('nameToIata     : ' + Object.keys(nameToIata).length);
@@ -236,11 +245,6 @@ async function main() {
   console.log('iataIcao       : ' + Object.keys(iataIcao).length);
   console.log('written        : ' + path.relative(process.cwd(), OUT) + ' (' + Math.round(size / 1024) + ' KB)');
 
-  if (failures.length) {
-    console.error('\nPROBE FAILURES (' + failures.length + '/' + Object.keys(PROBES).length + '):');
-    failures.forEach((f) => console.error(f));
-    process.exit(1);
-  }
   console.log('probes         : all ' + Object.keys(PROBES).length + ' passed');
 }
 

@@ -802,6 +802,16 @@ function toIsoUtc(s) {
 }
 function hhmm(s) { const m = String(s || '').match(/(\d{1,2}):(\d{2})/); return m ? (m[1].length < 2 ? '0' : '') + m[1] + ':' + m[2] : ''; }
 
+// "T2/G A12" style detail for the PDF, from whatever the block actually has.
+function gateOf(block) {
+  if (!block) return '';
+  const bits = [];
+  if (block.terminal) bits.push('T' + block.terminal);
+  if (block.gate) bits.push('Gate ' + block.gate);
+  if (block.baggageBelt) bits.push('Belt ' + block.baggageBelt);
+  return bits.length ? '(' + bits.join(' ') + ')' : '';
+}
+
 // Record the acting user's flights (UTC times) so the userless calendarSource
 // hook can surface them per-user. Keyed by (user, reservation).
 async function recordUserFlight(ctx, user, tripId, rid, payload) {
@@ -819,8 +829,17 @@ async function recordUserFlight(ctx, user, tripId, rid, payload) {
       events.push({ id: 'ft-' + rid + '-' + i, title: withSpaceNum(l.number) + (from && to ? ' ' + from + '→' + to : ''), start: start, end: end });
     });
   }
-  if (events.length) await attempt(() => ctx.db.exec('INSERT OR REPLACE INTO cal_events (uid, rid, trip_id, data, updated_at) VALUES (?, ?, ?, ?, ?)', uid, String(rid), tripId != null ? String(tripId) : null, JSON.stringify(events), Date.now()));
-  else await attempt(() => ctx.db.exec('DELETE FROM cal_events WHERE uid = ? AND rid = ?', uid, String(rid)));
+  if (events.length) {
+    await attempt(() => ctx.db.exec('INSERT OR REPLACE INTO cal_events (uid, rid, trip_id, data, updated_at) VALUES (?, ?, ?, ?, ?)', uid, String(rid), tripId != null ? String(tripId) : null, JSON.stringify(events), Date.now()));
+    return;
+  }
+  // Zero events is ambiguous: it can mean "not a flight any more" OR "the status
+  // lookup failed / we are outside the fetch window". Deleting on the second case
+  // silently removed a real flight from TREK's calendar, so only reconcile when we
+  // POSITIVELY know there is nothing to show.
+  const confident = payload.applicable === false ||
+    (Array.isArray(payload.legs) && payload.legs.length === 0 && !(payload.errors || []).length);
+  if (confident) await attempt(() => ctx.db.exec('DELETE FROM cal_events WHERE uid = ? AND rid = ?', uid, String(rid)));
 }
 
 // --- warning provider (userless): surfaces delays/cancellations in the planner
@@ -859,6 +878,25 @@ async function getTripMarkers(tripId, ctx) {
   const out = [];
   const rows = await attempt(() => ctx.db.query('SELECT reservation_id, payload, fetched_at FROM cache WHERE trip_id = ?', String(tripId)), []);
   const now = Date.now();
+  // Airports are merged ACROSS reservations, not just across a single itinerary's
+  // legs: a hub appears as both an arrival and a departure, and a round trip's
+  // origin is also its return destination, so each stacked two pins that hid one
+  // another. Keyed by IATA, falling back to rounded coordinates.
+  const airports = Object.create(null);
+  const addAirport = (block, num) => {
+    if (!block || block.lat == null || block.lon == null) return;
+    const key = block.iata || (Math.round(block.lat * 100) + ',' + Math.round(block.lon * 100));
+    const existing = airports[key];
+    if (existing) {
+      if (existing._flights.indexOf(num) === -1) existing._flights.push(num);
+      return;
+    }
+    airports[key] = {
+      id: 'ft-ap-' + String(key).replace(/[^A-Za-z0-9]/g, ''),
+      lat: block.lat, lng: block.lon, label: block.iata || '',
+      _name: block.name || block.iata || '', _flights: [num],
+    };
+  };
   for (const r of rows || []) {
     if (now - Number(r.fetched_at) > 6 * 3600 * 1000) continue;
     let p; try { p = JSON.parse(r.payload); } catch (_e) { continue; }
@@ -866,12 +904,16 @@ async function getTripMarkers(tripId, ctx) {
     const rid = r.reservation_id;
     p.legs.forEach((l, i) => {
       const s = l.status, num = withSpaceNum(l.number);
-      if (s && s.departure && s.departure.lat != null && s.departure.lon != null) out.push({ id: 'ft-' + rid + '-' + i + '-d', lat: s.departure.lat, lng: s.departure.lon, label: s.departure.iata || '', popupText: num + ' — ' + (s.departure.name || s.departure.iata || '') });
-      if (s && s.arrival && s.arrival.lat != null && s.arrival.lon != null) out.push({ id: 'ft-' + rid + '-' + i + '-a', lat: s.arrival.lat, lng: s.arrival.lon, label: s.arrival.iata || '', popupText: num + ' — ' + (s.arrival.name || s.arrival.iata || '') });
+      if (s) { addAirport(s.departure, num); addAirport(s.arrival, num); }
       if (l.live && l.live.lat != null && !l.live.onGround) out.push({ id: 'ft-' + rid + '-' + i + '-p', lat: l.live.lat, lng: l.live.lon, label: num, popupText: (l.live.desc || l.live.type || 'Aircraft') + (l.live.altBaro != null && l.live.altBaro !== 'ground' ? ' · ' + Math.round(l.live.altBaro) + ' ft' : ''), icon: 'plane', tone: 'accent' });
     });
     if (out.length >= 180) break;
   }
+  Object.keys(airports).forEach((k) => {
+    const a = airports[k];
+    out.push({ id: a.id, lat: a.lat, lng: a.lng, label: a.label,
+      popupText: a._flights.join(', ') + (a._name ? ' — ' + a._name : '') });
+  });
   return out.slice(0, 180);
 }
 
@@ -888,14 +930,23 @@ async function getTripPdf(tripId, ctx) {
       const s = l.status;
       const from = l.from || (s && s.departure && s.departure.iata) || '';
       const to = l.to || (s && s.arrival && s.arrival.iata) || '';
-      const dep = hhmm((s && s.departure && (s.departure.revised || s.departure.scheduled)) || l.depTime || '');
+      const depRaw = (s && s.departure && (s.departure.revised || s.departure.scheduled)) || l.depTime || '';
+      const dep = hhmm(depRaw);
       const arrT = hhmm((s && s.arrival && (s.arrival.revised || s.arrival.scheduled)) || l.arrTime || '');
-      body.push([withSpaceNum(l.number), (from && to ? from + ' → ' + to : (from || to || '')), dep, arrT, (s && s.status) || '']);
+      // A PDF is what you carry when you have no app and no network, so it should
+      // hold the details you would otherwise open the app for. The payload already
+      // has terminal, gate, belt and seat — none of it used to reach the page.
+      const date = (typeof depRaw === 'string' && /^\d{4}-\d{2}-\d{2}/.test(depRaw)) ? depRaw.slice(0, 10) : '';
+      const depDetail = [dep, gateOf(s && s.departure)].filter(Boolean).join(' ');
+      const arrDetail = [arrT, gateOf(s && s.arrival)].filter(Boolean).join(' ');
+      body.push([date, withSpaceNum(l.number), (from && to ? from + ' → ' + to : (from || to || '')),
+        depDetail, arrDetail, l.seat || '', (s && s.status) || '']);
     });
     if (body.length >= 50) break;
   }
   if (!body.length) return [];
-  return [{ title: 'Flights', table: { headers: ['Flight', 'Route', 'Departure', 'Arrival', 'Status'], rows: body } }];
+  return [{ title: 'Flights', table: {
+    headers: ['Date', 'Flight', 'Route', 'Departure', 'Arrival', 'Seat', 'Status'], rows: body } }];
 }
 
 // The acting user's flight events for TREK's calendar (userless; reads what the

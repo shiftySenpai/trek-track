@@ -7,7 +7,8 @@
     "dev": "npx -y trek-plugin-sdk dev",
     "pack": "npx -y trek-plugin-sdk pack",
     "build:airlines": "node scripts/build-airlines.js",
-    "test": "node --test \"test/*.test.js\""
+    "test": "node --test \"test/*.test.js\"",
+    "test:render": "node test/render-test.js"
   },
   "devDependencies": {
     "trek-plugin-sdk": "^1.5.0"
