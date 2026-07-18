@@ -510,7 +510,10 @@
       } else {
         html += '<div class="ft-t-sched">' + esc(sched.time) + '</div>';
       }
-      if (isArr && delayMin != null && delayMin !== 0) {
+      // Rendered for the DEPARTURE column too: a revised departure is often published
+      // long before (or instead of) a revised arrival, and it is the number that
+      // decides when you leave for the airport.
+      if (delayMin != null && delayMin !== 0) {
         html += '<div class="ft-t-rev ' + (delayMin > 0 ? 'late' : 'early') + '">' + (delayMin > 0 ? '+' : '−') + Math.abs(delayMin) + ' ' + L.min + ' ' + esc(delayMin > 0 ? L.delayLate : L.delayEarly) + '</div>';
       } else if (isArr && delayMin === 0) {
         html += '<div class="ft-t-rev">' + esc(L.ontime) + '</div>';
@@ -571,7 +574,7 @@
         '<div class="ft-arrow">' + svg('arrow') + '</div>' +
         '<div class="ft-ap arr"><div class="ft-iata">' + esc(arrIata) + '</div>' + (arrName ? '<div class="ft-apname">' + esc(arrName) + '</div>' : '') + '</div></div>';
 
-      var times = '<div class="ft-times">' + timeCol(L.dep, t.dep, null, false) + '<div class="mid"></div>' + timeCol(L.arr, t.arr, s ? s.delayMin : null, true) + '</div>';
+      var times = '<div class="ft-times">' + timeCol(L.dep, t.dep, s ? s.depDelayMin : null, false) + '<div class="mid"></div>' + timeCol(L.arr, t.arr, s ? s.delayMin : null, true) + '</div>';
 
       var prog = (live && isAirborne(s && s.status) && live.lat != null && !live.onGround) ? progressBar(leg) : '';
 
@@ -695,16 +698,34 @@
         '<span>' + esc(LS[s.status] || s.status) + '</span></div>';
     }
 
+    // Layover on ABSOLUTE time. This used to subtract minute-of-day values and wrap
+    // any negative result into [0,1439] — so an inbound delayed past its connection
+    // (arrive 17:30, next departs 15:30) rendered as a comfortable "22 h layover"
+    // in neutral grey, at exactly the moment the connection was gone. The wrap also
+    // made the `.broken` state unreachable. UTC instants are used when the status
+    // provides them; the local-clock difference is only a fallback, and one that
+    // cannot distinguish "next day" from "already missed" — so it never claims a
+    // connection is broken.
     function layover(prev, next) {
+      var aUtc = prev.status && prev.status.arrival && (prev.status.arrival.revisedUtc || prev.status.arrival.scheduledUtc);
+      var dUtc = next.status && next.status.departure && (next.status.departure.revisedUtc || next.status.departure.scheduledUtc);
       var a = (prev.status && prev.status.arrival && (prev.status.arrival.revised || prev.status.arrival.scheduled)) || prev.arrTime;
       var d = (next.status && next.status.departure && (next.status.departure.revised || next.status.departure.scheduled)) || next.depTime;
-      var am = minsOf(a), dm = minsOf(d), mins = null;
-      if (am != null && dm != null) { mins = dm - am; if (mins < 0) mins += 1440; }
+      var mins = null, exact = false;
+      var am2 = toMs(aUtc), dm2 = toMs(dUtc);
+      if (am2 != null && dm2 != null) { mins = Math.round((dm2 - am2) / 60000); exact = true; }
+      else {
+        var am = minsOf(a), dm = minsOf(d);
+        if (am != null && dm != null) { mins = dm - am; if (mins < 0) mins += 1440; }
+      }
       var at = next.from || (next.status && next.status.departure && next.status.departure.iata) || '';
-      var cls = 'ft-layover', dur = mins != null ? fmtDur(mins) : null, extra = '';
-      if (mins != null && mins < 0) { cls += ' broken'; extra = ' · ' + L.brokenConn; }
+      var cls = 'ft-layover', extra = '';
+      var broken = exact && mins != null && mins < 0;
+      var dur = (mins != null && !broken) ? fmtDur(mins) : null;
+      if (broken) { cls += ' broken'; extra = ' · ' + L.brokenConn; }
       else if (mins != null && mins < 45) { cls += ' tight'; extra = ' · ' + L.tightConn; }
-      return '<div class="' + cls + '"><span class="ln"></span><span>' + svg((mins != null && mins < 45) ? 'alert' : 'arrow') + ' ' + esc(L.layover) + (at ? ' ' + esc(at) : '') + (dur ? ' · ' + dur : '') + extra + '</span></div>';
+      var warn = broken || (mins != null && mins < 45);
+      return '<div class="' + cls + '"><span class="ln"></span><span>' + svg(warn ? 'alert' : 'arrow') + ' ' + esc(L.layover) + (at ? ' ' + esc(at) : '') + (dur ? ' · ' + dur : '') + extra + '</span></div>';
     }
 
     function journeyHeader(data, legs) {
@@ -857,14 +878,14 @@
       busy = false;
     }
 
-    async function saveNumber(v) { if (busy) return; busy = true; try { var d = await window.trek.invoke('/set', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId, flightNumber: v } }); editing = false; last = d; render(d); } catch (e) { window.trek.notify('error', e.message || 'error'); } busy = false; }
-    async function redetect(btn) { if (busy) return; busy = true; if (btn) { var v = btn.querySelector('svg'); if (v) v.classList.add('ft-spin'); } try { var d = await window.trek.invoke('/set', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId, flightNumber: '' } }); editing = false; expanded = {}; last = d; render(d); window.trek.notify('success', L.redetected); } catch (e) { window.trek.notify('error', e.message || 'error'); } busy = false; }
-    async function doRefresh(btn) { if (btn) { var v = btn.querySelector('svg'); if (v) v.classList.add('ft-spin'); } try { var d = await window.trek.invoke('/refresh', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId } }); last = d; render(d); } catch (e) { window.trek.notify('error', e.message || 'error'); if (btn) { var v2 = btn.querySelector('svg'); if (v2) v2.classList.remove('ft-spin'); } } }
+    async function saveNumber(v) { if (busy) return; busy = true; try { var d = await window.trek.invoke('/set', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId, flightNumber: v, locale: (ctx && ctx.locale) || '' } }); editing = false; last = d; render(d); } catch (e) { window.trek.notify('error', e.message || 'error'); } busy = false; }
+    async function redetect(btn) { if (busy) return; busy = true; if (btn) { var v = btn.querySelector('svg'); if (v) v.classList.add('ft-spin'); } try { var d = await window.trek.invoke('/set', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId, flightNumber: '', locale: (ctx && ctx.locale) || '' } }); editing = false; expanded = {}; last = d; render(d); window.trek.notify('success', L.redetected); } catch (e) { window.trek.notify('error', e.message || 'error'); } busy = false; }
+    async function doRefresh(btn) { if (btn) { var v = btn.querySelector('svg'); if (v) v.classList.add('ft-spin'); } try { var d = await window.trek.invoke('/refresh', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId, locale: (ctx && ctx.locale) || '' } }); last = d; render(d); } catch (e) { window.trek.notify('error', e.message || 'error'); if (btn) { var v2 = btn.querySelector('svg'); if (v2) v2.classList.remove('ft-spin'); } } }
 
     async function load() {
       if (!ctx || !ctx.reservationId) { render(null); return; }
       try {
-        var d = await window.trek.invoke('/status?tripId=' + encodeURIComponent(ctx.tripId || '') + '&reservationId=' + encodeURIComponent(ctx.reservationId));
+        var d = await window.trek.invoke('/status?tripId=' + encodeURIComponent(ctx.tripId || '') + '&reservationId=' + encodeURIComponent(ctx.reservationId) + '&locale=' + encodeURIComponent((ctx && ctx.locale) || ''));
         last = d; render(d);
       } catch (e) {
         // keep the last good data on a transient poll failure instead of wiping it

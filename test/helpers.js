@@ -53,7 +53,7 @@ function loadPlugin() {
   // FT_SERVER) that does not yet define all of these.
   const INTERNALS = ['splitFlight', 'airlineToIata', 'iataToIcao', 'icaoToIata', 'resolveLeg',
     'normName', 'coreName', 'canSetKey', 'getKey', 'requireOwnedReservation', 'parseDateTime',
-    'buildPayload', 'layoverMinutes', 'srvStr'];
+    'buildPayload', 'srvStr', 'ttlFor', 'fetchAero', 'normaliseAero', 'maybeNotify', 'toMs'];
   const expose = INTERNALS.map((n) => `  ${n}: typeof ${n} !== 'undefined' ? ${n} : undefined,`).join('\n');
   const src = fs.readFileSync(ENTRY, 'utf8') + `\nmodule.exports.__test = {\n${expose}\n};\n`;
   const m = new Module(ENTRY, null);
@@ -85,6 +85,7 @@ function mockCtx(opts) {
     config: o.config || {},
     _kv: kv,
     _metaWrites: metaWrites,
+    _notifications: [],
     _cacheRows: () => tables.cache,
     _flightRows: () => tables.flights,
     _tables: tables,
@@ -106,7 +107,7 @@ function mockCtx(opts) {
       },
     },
     weather: { async get() { return null; } },
-    notify: { async send() {} },
+    notify: { async send(n) { ctx._notifications.push(n); } },
     meta: {
       async set(kind, id, k, v) { metaWrites.push({ kind, id, k, v }); },
       async delete(kind, id, k) { metaWrites.push({ kind, id, k, deleted: true }); },

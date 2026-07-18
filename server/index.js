@@ -180,14 +180,22 @@ function parseMeta(r) {
 
 // Parse a reservation datetime ('YYYY-MM-DDTHH:MM' or with a space) into an
 // epoch-ms estimate and the local date string used for the AeroDataBox query.
+// A reservation time is a NAIVE local time at the departure airport — TREK stores
+// no offset. Parsing it without one made Date.parse use the SERVER's timezone, so
+// every derived window silently shifted by the host's offset (and moved when the
+// host moved). We parse as UTC instead: still not the airport's true instant, but
+// deterministic and host-independent, with a known bound on the error (±14h, the
+// range of real UTC offsets). Callers must therefore treat this as an ESTIMATE and
+// apply TZ_SLACK; the authoritative instants are the *Utc fields AeroDataBox
+// returns, which replace these as soon as a status lookup succeeds.
 function parseDateTime(s) {
   if (!s || typeof s !== 'string') return null;
   const m = s.match(/(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/);
   if (!m) return null;
-  const iso = m[4] ? (m[1] + '-' + m[2] + '-' + m[3] + 'T' + m[4] + ':' + m[5] + ':00')
-    : (m[1] + '-' + m[2] + '-' + m[3] + 'T12:00:00');
+  const iso = m[4] ? (m[1] + '-' + m[2] + '-' + m[3] + 'T' + m[4] + ':' + m[5] + ':00Z')
+    : (m[1] + '-' + m[2] + '-' + m[3] + 'T12:00:00Z');
   const ms = Date.parse(iso);
-  return { ms: isNaN(ms) ? null : ms, date: m[1] + '-' + m[2] + '-' + m[3] };
+  return { ms: isNaN(ms) ? null : ms, date: m[1] + '-' + m[2] + '-' + m[3], estimated: true };
 }
 
 // Ordered endpoints (from -> stops -> to), by `sequence`.
@@ -274,9 +282,24 @@ async function fetchAero(number, key, date) {
     : (r.data && Array.isArray(r.data.flights) ? r.data.flights
       : (r.data && r.data.departure ? [r.data] : []));
   if (!list.length) return { data: null, error: null };
+  // dateLocalRole=Both also returns the PREVIOUS day's operation when it arrives on
+  // the pinned date, so a red-eye (dep 23:40, arr 07:10+1) gets two candidates. The
+  // closest-to-now tie-break below reliably picks the earlier — i.e. wrong — one for
+  // an upcoming flight, showing yesterday's gate, status and delay. Keep only
+  // candidates that actually DEPART on the pinned date; fall back to the unfiltered
+  // list if that leaves nothing, so a schedule quirk can't blank the widget.
+  let pool = list;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date || '')) {
+    const sameDay = list.filter((f) => {
+      const t = f && f.departure && f.departure.scheduledTime;
+      const local = t && (t.local || t.utc);
+      return typeof local === 'string' && local.slice(0, 10) === date;
+    });
+    if (sameDay.length) pool = sameDay;
+  }
   const now = Date.now();
-  list.sort((a, b) => Math.abs(depTime(a) - now) - Math.abs(depTime(b) - now));
-  return { data: normaliseAero(list[0]), error: null };
+  pool.sort((a, b) => Math.abs(depTime(a) - now) - Math.abs(depTime(b) - now));
+  return { data: normaliseAero(pool[0]), error: null };
 }
 
 function depTime(f) {
@@ -303,11 +326,16 @@ function normaliseAero(f) {
   const arr = f.arrival || {};
   const dt = pickTime(dep);
   const at = pickTime(arr);
-  let delayMin = null;
-  if (at && at.revisedUtc && at.scheduledUtc) {
-    const d = Math.round((Date.parse(at.revisedUtc) - Date.parse(at.scheduledUtc)) / 60000);
-    delayMin = isNaN(d) ? null : d;
-  }
+  const diffMin = (t) => {
+    if (!t || !t.revisedUtc || !t.scheduledUtc) return null;
+    const d = Math.round((Date.parse(t.revisedUtc) - Date.parse(t.scheduledUtc)) / 60000);
+    return isNaN(d) ? null : d;
+  };
+  const delayMin = diffMin(at);
+  // AeroDataBox routinely publishes a revised DEPARTURE long before (or instead of)
+  // a revised arrival. Deriving delay from arrival alone therefore missed exactly
+  // the delay that strands a traveller at the gate: no chip, no alert, no warning.
+  const depDelayMin = diffMin(dt);
   return {
     number: (f.number || '').toString(),
     callSign: f.callSign || null,
@@ -316,6 +344,7 @@ function normaliseAero(f) {
     aircraftModel: (f.aircraft && f.aircraft.model) || null,
     aircraftReg: (f.aircraft && f.aircraft.reg) || null,
     delayMin: delayMin,
+    depDelayMin: depDelayMin,
     departure: airportBlock(dep, dt),
     arrival: airportBlock(arr, at),
   };
@@ -362,6 +391,16 @@ async function fetchLive(opts) {
 }
 
 function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : null; }
+
+// Parse an AeroDataBox UTC timestamp to epoch ms. These carry a real offset (or a
+// trailing Z), unlike the reservation strings, so they are authoritative.
+function toMs(s) {
+  if (!s) return null;
+  let t = String(s).replace(' ', 'T');
+  if (!/[zZ]$|[+-]\d\d:?\d\d$/.test(t)) t += 'Z';
+  const n = Date.parse(t);
+  return isNaN(n) ? null : n;
+}
 
 function normaliseLive(ac) {
   const alt = ac.alt_baro === 'ground' ? 'ground' : num(ac.alt_baro);
@@ -518,19 +557,31 @@ async function buildPayload(ctx, tripId, reservationId, forcedNumber, resv) {
   const arr = parseDateTime(resv && resv.reservation_end_time);
   const now = Date.now();
   const depMs = dep && dep.ms;
-  const arrMs = (arr && arr.ms) || (depMs ? depMs + 6 * H : null);
+  // No end time means we must guess the duration. The old guess of +6h declared a
+  // 13h flight "past" while it was still in the air, which stopped polling, muted
+  // every alert and dropped it from the trip warnings. Assume a long-haul instead:
+  // being late to call a flight finished only costs a little polling, while being
+  // early goes dark during the part of the trip that matters most.
+  const arrMs = (arr && arr.ms) || (depMs ? depMs + 20 * H : null);
   const baseDate = dep && dep.date;
+  // Both endpoints came from naive local strings, so they carry up to ±14h of
+  // timezone error. Widen the fetch windows by that bound rather than letting a
+  // long-haul departure out of Asia or the Americas fall outside them entirely.
+  const SLACK = (dep && dep.estimated) ? 14 * H : 0;
 
   // phase: upcoming (>48h out) | active (within window) | past
   let phase = 'active';
-  if (depMs && now < depMs - 48 * H) phase = 'upcoming';
-  else if (arrMs && now > arrMs + 6 * H) phase = 'past';
+  if (depMs && now < depMs - 48 * H - SLACK) phase = 'upcoming';
+  else if (arrMs && now > arrMs + 6 * H + SLACK) phase = 'past';
 
   // AeroDataBox status: from 48h before departure until 6h after arrival
   // (or best-effort if we don't know the date). Saves quota on far-future flights.
-  const statusWin = !depMs ? true : (now >= depMs - 48 * H && now <= arrMs + 6 * H);
+  const statusWin = !depMs ? true : (now >= depMs - 48 * H - SLACK && now <= arrMs + 6 * H + SLACK);
   // adsb.fi live position: only while the aircraft is plausibly airborne — 1h
-  // before departure to 2h after arrival. Prevents matching another day's flight.
+  // before departure to 2h after arrival. Kept TIGHT despite the timezone slack,
+  // because a wrong-day match here is worse than a miss; trackLeg independently
+  // fetches the live position whenever the (date-pinned) status says the aircraft
+  // is airborne, which is the reliable signal when the clock estimate is off.
   const liveWin = !depMs ? true : (now >= depMs - 1 * H && now <= arrMs + 2 * H);
   // Map trip day ids -> dates, so a per-leg (possibly next-day) query hits the
   // right calendar day instead of the reservation-level date.
@@ -577,17 +628,54 @@ async function buildPayload(ctx, tripId, reservationId, forcedNumber, resv) {
     legs.push(tracked);
   }
 
-  return { applicable: true, source, hasKey, legs, booking, updatedAt: Date.now() };
+  // AeroDataBox returns true UTC instants. Once we have them they REPLACE the
+  // naive estimates above, so the countdown, the phase and the client's polling
+  // cadence stop depending on the reservation string's missing timezone.
+  const firstUtc = toMs(legs[0] && legs[0].status && legs[0].status.departure &&
+    (legs[0].status.departure.revisedUtc || legs[0].status.departure.scheduledUtc));
+  const lastLeg = legs[legs.length - 1];
+  const lastUtc = toMs(lastLeg && lastLeg.status && lastLeg.status.arrival &&
+    (lastLeg.status.arrival.revisedUtc || lastLeg.status.arrival.scheduledUtc));
+  if (firstUtc != null) { booking.depMs = firstUtc; booking.estimatedTimes = false; }
+  if (lastUtc != null) booking.arrMs = lastUtc;
+  if (firstUtc != null || lastUtc != null) {
+    const d = booking.depMs, a = booking.arrMs;
+    booking.phase = (d && now < d - 48 * H) ? 'upcoming' : ((a && now > a + 6 * H) ? 'past' : 'active');
+  } else {
+    booking.estimatedTimes = true;
+  }
+
+  // Every leg's errors, surfaced so an exhausted quota or a rejected key is
+  // visible instead of looking identical to "this flight has no data".
+  const errors = [];
+  legs.forEach((l) => (l.errors || []).forEach((e) => { if (e && errors.indexOf(e) === -1) errors.push(e); }));
+
+  return { applicable: true, source, hasKey, legs, booking, errors: errors.slice(0, 4), updatedAt: Date.now() };
 }
 
-// Cache lifetime by phase: an active flight refreshes ~once a minute, but a
-// far-future or completed flight barely changes — so we don't burn the ~600/mo
-// AeroDataBox quota re-fetching schedules that won't move.
+// Cache lifetime as a curve on time-to-departure, not a three-way phase switch.
+// "active" began 48h before departure and pinned the TTL at 60s for two full days
+// — ~2900 lookups per reservation against a ~600/month quota, when nothing about a
+// schedule moves that far out. Refresh fast only when the data actually changes:
+// in the air, or close to departure.
 function ttlFor(payload) {
-  const ph = payload && payload.booking && payload.booking.phase;
-  if (ph === 'past') return 6 * 3600 * 1000;
-  if (ph === 'upcoming') return 30 * 60 * 1000;
-  return CACHE_TTL_MS;
+  const M = 60 * 1000, H = 3600 * 1000;
+  const b = (payload && payload.booking) || {};
+  if (b.phase === 'past') return 6 * H;
+  const legs = (payload && payload.legs) || [];
+  const moving = legs.some((l) => {
+    const st = l && l.status && l.status.status;
+    return st === 'EnRoute' || st === 'Departed' || st === 'Approaching' ||
+      st === 'Boarding' || st === 'Diverted';
+  });
+  if (moving) return M;
+  const dep = b.depMs;
+  if (!dep) return 5 * M;                       // unknown departure: middle ground
+  const untilDep = dep - Date.now();
+  if (untilDep < 3 * H) return M;               // the hours that decide your day
+  if (untilDep < 12 * H) return 5 * M;
+  if (untilDep < 48 * H) return 30 * M;
+  return 2 * H;                                 // far future: schedules barely move
 }
 
 // `tripId` here is always the VERIFIED trip from requireOwnedReservation — never
@@ -617,49 +705,92 @@ async function cachedPayload(ctx, tripId, reservationId, force, forcedNumber, re
   return payload;
 }
 
+// --- server-rendered strings -------------------------------------------------
+// Everything the HOST renders rather than the widget: push/bell notifications and
+// the native trip warnings. These were hardcoded German regardless of locale, so
+// an English user on an English TREK got German alerts — for the highest-stakes
+// text the plugin produces, the one saying the flight is cancelled.
+//
+// ctx carries no locale: req.user is { id, username, isAdmin } and the userless
+// hooks get no user at all. So the widget passes its own locale on /status and
+// /refresh (it already receives one via trek:context), and anything without that
+// context falls back to English rather than to German.
+const SRV_STR = {
+  en: {
+    cancelled: 'Flight cancelled', diverted: 'Flight diverted',
+    delayed: (m) => 'Delayed +' + m + ' min', depDelayed: (m) => 'Departure delayed +' + m + ' min',
+    gate: (g) => 'Gate ' + g, departed: 'Departed', arrived: 'Landed',
+    updates: 'Flight updates',
+    wCancelled: 'cancelled', wDiverted: 'diverted', wDelayed: (m) => '+' + m + ' min late',
+  },
+  de: {
+    cancelled: 'Flug annulliert', diverted: 'Flug umgeleitet',
+    delayed: (m) => 'Verspätung +' + m + ' Min', depDelayed: (m) => 'Abflug +' + m + ' Min später',
+    gate: (g) => 'Gate ' + g, departed: 'Gestartet', arrived: 'Gelandet',
+    updates: 'Flug-Updates',
+    wCancelled: 'annulliert', wDiverted: 'umgeleitet', wDelayed: (m) => '+' + m + ' Min verspätet',
+  },
+};
+function srvStr(locale) {
+  return String(locale || '').toLowerCase().indexOf('de') === 0 ? SRV_STR.de : SRV_STR.en;
+}
+
 // --- notifications (only possible with a bound user, i.e. from a route) -------
 // TREK forbids a userless job from notifying, so we fire while the app is open:
 // each poll diffs the flight state and, on a meaningful change, sends one
 // deduplicated bell/email notification to the acting user.
-async function maybeNotify(ctx, user, rid, payload) {
+async function maybeNotify(ctx, user, rid, payload, locale) {
   if (!user || !user.id || !payload || !payload.legs || !payload.legs.length) return;
   if (payload.booking && payload.booking.phase === 'past') return;
+  const S = srvStr(locale);
   const uid = String(user.id);
   const cur = payload.legs.map((l) => {
     const s = l.status;
     return { n: l.number,
       st: s ? s.status : null,
       d: s && s.delayMin != null ? Math.round(s.delayMin / 5) * 5 : null,
+      // Departure delay is part of the signature, so a 10:00 -> 12:00 slip is a
+      // change worth alerting on even when the arrival estimate has not moved.
+      dd: s && s.depDelayMin != null ? Math.round(s.depDelayMin / 5) * 5 : null,
       g: s && s.arrival ? (s.arrival.gate || null) : null,
       dg: s && s.departure ? (s.departure.gate || null) : null };
   });
-  const sig = JSON.stringify(cur);
   const prevRows = await attempt(() => ctx.db.query('SELECT sig FROM notif_state WHERE rid = ? AND uid = ?', rid, uid), []);
   const prev = prevRows && prevRows[0] ? prevRows[0].sig : null;
+  let prevArr = []; try { prevArr = JSON.parse(prev); } catch (_e) { prevArr = []; }
+  const old = {}; (prevArr || []).forEach((o) => { if (o && o.n) old[o.n] = o; });
+
+  // A leg with no status right now (API timeout, 429, key just removed, or simply
+  // outside the fetch window) must NOT overwrite what we knew: storing all-nulls as
+  // the baseline made the next successful poll look like a fresh gate assignment
+  // and a fresh departure, firing alerts for events that never happened. Carry the
+  // previous entry forward instead, so the diff is only ever against real data.
+  const merged = cur.map((c) => (c.st == null && old[c.n]) ? old[c.n] : c);
+  const sig = JSON.stringify(merged);
   await attempt(() => ctx.db.exec('INSERT OR REPLACE INTO notif_state (rid, uid, sig) VALUES (?, ?, ?)', rid, uid, sig));
   if (!prev || prev === sig) return; // baseline or nothing changed
-  let prevArr = []; try { prevArr = JSON.parse(prev); } catch (_e) { prevArr = []; }
-  const old = {}; prevArr.forEach((o) => { old[o.n] = o; });
   // Collect EVERY notify-worthy change across all legs (don't mask a second one),
   // then send a single combined notification. The baseline was already advanced
   // above, so nothing gets re-notified.
   const msgs = [];
-  for (const c of cur) {
+  for (const c of merged) {
     const o = old[c.n] || {};
+    if (c.st == null) continue;               // nothing known this round
     let msg = null;
-    if ((c.st === 'Canceled' || c.st === 'Cancelled') && o.st !== c.st) msg = 'Flug annulliert';
-    else if (c.st === 'Diverted' && o.st !== c.st) msg = 'Flug umgeleitet';
-    else if (c.d != null && c.d >= 15 && c.d !== o.d) msg = 'Verspaetung +' + c.d + ' min';
-    else if ((c.dg || c.g) && (c.dg || c.g) !== (o.dg || o.g)) msg = 'Gate ' + (c.dg || c.g);
-    else if (c.st === 'Departed' && o.st !== c.st) msg = 'Gestartet';
-    else if (c.st === 'Arrived' && o.st !== c.st) msg = 'Gelandet';
+    if ((c.st === 'Canceled' || c.st === 'Cancelled') && o.st !== c.st) msg = S.cancelled;
+    else if (c.st === 'Diverted' && o.st !== c.st) msg = S.diverted;
+    else if (c.d != null && c.d >= 15 && c.d !== o.d) msg = S.delayed(c.d);
+    else if (c.dd != null && c.dd >= 15 && c.dd !== o.dd) msg = S.depDelayed(c.dd);
+    else if ((c.dg || c.g) && (c.dg || c.g) !== (o.dg || o.g)) msg = S.gate(c.dg || c.g);
+    else if (c.st === 'Departed' && o.st !== c.st) msg = S.departed;
+    else if (c.st === 'Arrived' && o.st !== c.st) msg = S.arrived;
     if (msg) msgs.push({ n: c.n, msg: msg });
   }
   if (msgs.length === 1) {
     await attempt(() => ctx.notify.send({ title: withSpaceNum(msgs[0].n), body: msgs[0].msg, scope: 'user', targetId: user.id }));
   } else if (msgs.length > 1) {
     const body = msgs.map((m) => withSpaceNum(m.n) + ': ' + m.msg).join(' · ').slice(0, 990);
-    await attempt(() => ctx.notify.send({ title: 'Flug-Updates', body: body, scope: 'user', targetId: user.id }));
+    await attempt(() => ctx.notify.send({ title: S.updates, body: body, scope: 'user', targetId: user.id }));
   }
 }
 
@@ -709,9 +840,13 @@ async function getTripWarnings(tripId, ctx) {
       const to = lg.to || (s.arrival && s.arrival.iata) || '';
       const route = from && to ? ' ' + from + '→' + to : '';
       const num = withSpaceNum(lg.number);
-      if (s.status === 'Canceled' || s.status === 'Cancelled') out.push({ level: 'error', message: num + route + ' annulliert' });
-      else if (s.status === 'Diverted') out.push({ level: 'error', message: num + route + ' umgeleitet' });
-      else if (s.delayMin != null && s.delayMin >= 20) out.push({ level: 'warning', message: num + route + ' +' + s.delayMin + ' min verspaetet' });
+      // Userless hook: no locale is available here, so English is the documented
+      // default rather than the previous German-only text.
+      const S = srvStr(null);
+      if (s.status === 'Canceled' || s.status === 'Cancelled') out.push({ level: 'error', message: num + route + ' ' + S.wCancelled });
+      else if (s.status === 'Diverted') out.push({ level: 'error', message: num + route + ' ' + S.wDiverted });
+      else if (s.delayMin != null && s.delayMin >= 20) out.push({ level: 'warning', message: num + route + ' ' + S.wDelayed(s.delayMin) });
+      else if (s.depDelayMin != null && s.depDelayMin >= 20) out.push({ level: 'warning', message: num + route + ' ' + S.wDelayed(s.depDelayMin) });
     }
     if (out.length >= 12) break;
   }
@@ -794,6 +929,9 @@ function readParams(req) {
     tripId: b.tripId != null ? b.tripId : q.tripId,
     reservationId: b.reservationId != null ? b.reservationId : q.reservationId,
     flightNumber: b.flightNumber != null ? b.flightNumber : q.flightNumber,
+    // Display locale, forwarded by the widget so host-rendered notifications match
+    // the language the user is reading TREK in.
+    locale: b.locale != null ? b.locale : q.locale,
   };
 }
 
@@ -839,7 +977,7 @@ module.exports = definePlugin({
         if (own.error) return own.error;
         const payload = await cachedPayload(ctx, p.tripId, String(p.reservationId), false, null, own.resv);
         if (!payload.cached) {
-          await attempt(() => maybeNotify(ctx, req.user, String(p.reservationId), payload));
+          await attempt(() => maybeNotify(ctx, req.user, String(p.reservationId), payload, p.locale));
           await attempt(() => recordUserFlight(ctx, req.user, p.tripId, String(p.reservationId), payload));
         }
         payload.canSetKey = canSetKey(ctx, req.user); // per-request — never cached
@@ -853,7 +991,7 @@ module.exports = definePlugin({
         const own = await requireOwnedReservation(ctx, p.tripId, p.reservationId);
         if (own.error) return own.error;
         const payload = await cachedPayload(ctx, p.tripId, String(p.reservationId), true, null, own.resv);
-        await attempt(() => maybeNotify(ctx, req.user, String(p.reservationId), payload));
+        await attempt(() => maybeNotify(ctx, req.user, String(p.reservationId), payload, p.locale));
         await attempt(() => recordUserFlight(ctx, req.user, p.tripId, String(p.reservationId), payload));
         payload.canSetKey = canSetKey(ctx, req.user); // per-request — never cached
         return json(200, payload);
