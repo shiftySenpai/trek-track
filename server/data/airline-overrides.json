@@ -1,0 +1,70 @@
+{
+  "_comment": [
+    "Hand-maintained airline overrides, applied LAST by scripts/build-airlines.js and",
+    "therefore winning over every upstream source. Three reasons an entry belongs here:",
+    "",
+    "  1. COLLISION - the brand name a traveller types is claimed by more than one",
+    "     carrier upstream, and the exact-match would pick the wrong (usually defunct)",
+    "     one. Example: 'indigo' matches the dead US 'Indigo' (I9) rather than",
+    "     'IndiGo Airlines' (6E), which is the airline anyone actually means today.",
+    "  2. MISSING - the carrier is absent from the upstream sources entirely.",
+    "  3. BRAND - the common short name differs from the registered legal name.",
+    "",
+    "Every code here was verified against a fetched source (Virtual Radar Server",
+    "standing-data and/or Wikipedia 'List of airline codes'); 'src' records which.",
+    "Keys must be normalised the same way normName() does: lowercase, punctuation",
+    "collapsed to single spaces. Do NOT guess a code - a wrong one silently queries",
+    "someone else's flight, which is worse than no result at all.",
+    "",
+    "Known still-missing (no source could verify a code, deliberately omitted):",
+    "  Iberojet - claimed E9 elsewhere but unverified in both sources."
+  ],
+
+  "collisions": {
+    "indigo": { "iata": "6E", "icao": "IGO", "src": "vrs+wikipedia", "note": "vs defunct US Indigo I9" },
+    "indigo airlines": { "iata": "6E", "icao": "IGO", "src": "vrs+wikipedia" },
+    "level": { "iata": "LL", "icao": "LVL", "src": "vrs+wikipedia", "note": "vs junk row FOO/VK" },
+    "condor": { "iata": "DE", "icao": "CFG", "src": "vrs+wikipedia", "note": "vs ICAO-only CIB row" },
+    "ajet": { "iata": "VF", "icao": "TKJ", "src": "wikipedia", "note": "vs AJY row with empty IATA" },
+    "porter airlines": { "iata": "PD", "icao": "POE", "src": "vrs" },
+    "scoot": { "iata": "TR", "icao": "TGW", "src": "vrs+wikipedia", "note": "TZ is the former code" }
+  },
+
+  "missing": {
+    "play": { "iata": "OG", "icao": "FPY", "src": "wikipedia", "note": "Icelandic PLAY; absent from vrs, which still lists OG under Star Air. IATA verified from wikipedia, ICAO unconfirmed - only affects the adsb.fi call sign, never the schedule lookup." },
+    "wizz air abu dhabi": { "iata": "5W", "icao": "WAZ", "src": "wikipedia", "note": "absent from vrs; ICAO unconfirmed (call sign only)" },
+    "world2fly": { "iata": "2W", "icao": "WFL", "src": "vrs" },
+    "la compagnie": { "iata": "B0", "icao": "DJT", "src": "vrs", "note": "vrs row: La Compagnie icao=DJT" },
+    "french bee": { "iata": "BF", "icao": "FBU", "src": "vrs" },
+    "animawings": { "iata": "A2", "icao": "AWG", "src": "vrs+wikipedia" },
+    "hisky": { "iata": "H7", "icao": "HYM", "src": "vrs+wikipedia" },
+    "hisky europe": { "iata": "H4", "icao": "HYS", "src": "vrs", "note": "vrs row: HiSky Europe icao=HYS" }
+  },
+
+  "brand": {
+    "latam": { "iata": "LA", "icao": "LAN", "src": "vrs+wikipedia", "note": "LATAM Chile mainline" },
+    "ita airways": { "iata": "AZ", "icao": "ITY", "src": "vrs+wikipedia" },
+    "flydubai": { "iata": "FZ", "icao": "FDB", "src": "vrs+wikipedia" },
+    "saudia": { "iata": "SV", "icao": "SVA", "src": "vrs+wikipedia" },
+    "gol": { "iata": "G3", "icao": "GLO", "src": "vrs+wikipedia" },
+    "breeze airways": { "iata": "MX", "icao": "MXY", "src": "vrs+wikipedia" },
+    "akasa air": { "iata": "QP", "icao": "AKJ", "src": "vrs+wikipedia" },
+    "riyadh air": { "iata": "RX", "icao": "RXI", "src": "vrs+wikipedia" },
+    "starlux": { "iata": "JX", "icao": "SJX", "src": "vrs+wikipedia" },
+    "starlux airlines": { "iata": "JX", "icao": "SJX", "src": "vrs+wikipedia" },
+    "zipair": { "iata": "ZG", "icao": "TZP", "src": "vrs+wikipedia" },
+    "norse atlantic": { "iata": "N0", "icao": "NBT", "src": "vrs+wikipedia" },
+    "norse atlantic airways": { "iata": "N0", "icao": "NBT", "src": "vrs+wikipedia" },
+    "discover airlines": { "iata": "4Y", "icao": "OCN", "src": "vrs+wikipedia" },
+    "jetsmart": { "iata": "JA", "icao": "JAT", "src": "vrs+wikipedia" },
+    "viva aerobus": { "iata": "VB", "icao": "VIV", "src": "vrs+wikipedia" },
+    "smartwings": { "iata": "QS", "icao": "TVS", "src": "vrs+wikipedia" },
+    "corendon airlines": { "iata": "XC", "icao": "CAI", "src": "vrs+wikipedia" },
+    "flynas": { "iata": "XY", "icao": "KNE", "src": "vrs+wikipedia" },
+    "salamair": { "iata": "OV", "icao": "OMS", "src": "vrs+wikipedia" },
+    "avelo": { "iata": "XP", "icao": "VXP", "src": "vrs+wikipedia" },
+    "avelo airlines": { "iata": "XP", "icao": "VXP", "src": "vrs+wikipedia" },
+    "flair": { "iata": "F8", "icao": "FLE", "src": "vrs+wikipedia" },
+    "flair airlines": { "iata": "F8", "icao": "FLE", "src": "vrs+wikipedia" }
+  }
+}

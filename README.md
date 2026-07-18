@@ -9,6 +9,8 @@ actual aircraft position from the free **adsb.fi** open-data network.
 
 ## Setup
 
+Requires **TREK 3.4.0 or newer**.
+
 1. Install and activate the plugin, then approve its permissions.
 2. Open a trip, expand a flight reservation, and the tracker appears beneath it.
    The flight number(s) are detected from the booking; if not, type once to save.
@@ -16,16 +18,28 @@ actual aircraft position from the free **adsb.fi** open-data network.
 
 ### Adding the AeroDataBox key (admin) — unlocks schedule / gate / delay
 
-The key is **instance-wide and admin-only**. Because of a current TREK core bug
-([mauriceboe/TREK#1569](https://github.com/mauriceboe/TREK/issues/1569)) plugin
-routes are never told whether the caller is an admin, so the key **cannot** be
-entered in the widget yet — you would only get an *"admin only" / 403 / 404*
-error. Until that TREK fix ships, set the key through TREK's own admin-guarded
-config endpoint:
+The key is **instance-wide**: one admin sets it once and every user on the
+instance gets schedule, gate and delay data. Without it you still get the free
+adsb.fi live position.
+
+**In the widget (recommended).** Requires **TREK 3.4.0+**, which fixed plugin
+admin detection ([TREK#1569](https://github.com/liketrek/TREK/issues/1569)) —
+before 3.4 a plugin was never told the caller was an admin, which is why this
+field was temporarily removed in v1.7.4.
 
 1. Get a free key at `rapidapi.com/aedbx-aedbx/api/aerodatabox`.
-2. Log in as a **TREK administrator** (e.g. `admin@trek.local`), open the browser
-   dev tools (**F12**) → **Console**, paste and run:
+2. Open any flight reservation **as a TREK administrator**. Under the tracker you
+   will see **“Add AeroDataBox key”** — click it, paste the key, hit save.
+3. That's it. The widget reloads with schedule data, and the key applies to
+   everyone. Admins later see **“AeroDataBox key active · Replace · Remove”**.
+
+Non-admins never see the field — only a short note that an admin can add a key.
+
+**Alternative: the admin config API.** Equivalent, and useful for scripted or
+headless setup. A key set this way **takes precedence** over one entered in the
+widget (see *Where the key is read from* below).
+
+1. Log in as a **TREK administrator**, open dev tools (**F12**) → **Console**:
    ```js
    await fetch('/api/admin/plugins/flight-tracker/config', {
      method: 'PUT', credentials: 'include',
@@ -35,19 +49,30 @@ config endpoint:
    ```
    A masked response like `{ config: { aerodatabox_key: '••••••••' } }` means it
    was saved. To remove it, send `{ aerodatabox_key: '' }`.
-3. **Reload the plugin** (Admin → Plugins → deactivate → activate) so it re-reads
-   the config, then **hard-refresh** the trip tab (**Ctrl/Cmd+Shift+R**) so any
-   old cached widget is replaced. The schedule, gate and delay data then appear
-   for **all** users.
+2. **Reload the plugin** (Admin → Plugins → deactivate → activate) so it re-reads
+   the config, then **hard-refresh** the trip tab (**Ctrl/Cmd+Shift+R**).
 
-Once the TREK fix is released, an in-widget key field for admins will return.
+**Where the key is read from.** `ctx.config.aerodatabox_key` (the admin config
+API, and the setting in Admin → Plugins) is checked **first**; the key stored by
+the in-widget field is used only when that is empty. So an explicitly
+admin-configured key can never be silently shadowed by the widget. Setting or
+clearing the key drops the response cache, so data updates immediately.
 
 ## What it does
 
 - **Reads the flight straight from the booking.** It builds the flight number
   from the reservation's airline + flight-number fields (e.g. `Austrian
-  Airlines` + `254` → `OS254`), using a bundled database of ~1600 airlines. If it
-  can't, you type it once and it is remembered for that reservation.
+  Airlines` + `254` → `OS254`), using a bundled database of ~2,800 airline name
+  spellings. If it can't, you type it once and it is remembered for that
+  reservation.
+- **Forgiving about how you type it.** `Frontier Airlines` + `1234`,
+  `F9 1234`, `F91234` and even the ICAO form `FFT1234` all resolve to the same
+  flight, and airline names match loosely — `Delta Airlines`, `Delta Air Lines`
+  and `Delta` are all understood. Airline codes containing a digit (`F9`
+  Frontier, `U2` easyJet, `6E` IndiGo, `W6` Wizz Air) are parsed correctly; they
+  are 40 % of all airline codes and used to break the lookup. Codes are checked
+  against a build-time probe list, so a stale upstream entry can't silently point
+  a lookup at the wrong carrier.
 - **Multi-leg flights.** Connections are fully supported: a total-route header
   (e.g. `KLU → VIE → HAM`, gate-to-gate duration, overall status) sits above each
   leg (Austrian, then Eurowings), tracked separately with the **layover duration**
@@ -84,13 +109,13 @@ Once the TREK fix is released, an in-widget key field for admins will return.
   flights show a countdown plus the booked route/times and light up
   automatically as departure approaches.
 - **Works with or without an API key.** The AeroDataBox key is **instance-wide**
-  and **admin-managed**: an admin sets it once through TREK's admin-guarded
-  plugin-config API (`PUT /api/admin/plugins/flight-tracker/config`) and it
-  applies to every user. It arrives in the plugin decrypted via `ctx.config`.
-  (Setting it is genuinely admin-only — TREK's admin endpoints enforce that —
-  whereas plugin routes cannot verify admin status themselves, so there is no
-  in-widget key box.) Without a key you still get the free adsb.fi live position.
-  Results are cached briefly so the public rate limits are respected.
+  and **admin-only**: an admin sets it once — in the widget itself, or through
+  TREK's admin-guarded plugin-config API
+  (`PUT /api/admin/plugins/flight-tracker/config`) — and it applies to every
+  user. The in-widget field is gated on the **server** re-checking
+  `req.user.isAdmin` on every request, so a non-admin is refused with `403` even
+  if the UI is tampered with. Without a key you still get the free adsb.fi live
+  position. Results are cached briefly so the public rate limits are respected.
 - **Change alerts.** When a tracked flight is delayed, cancelled, changes gate or
   departs/arrives, delayed/cancelled flights appear as **native trip warnings**
   in the planner, and — while you have TREK open — you get a deduplicated
@@ -128,6 +153,14 @@ with altitude and speed.
 Data sources: [AeroDataBox](https://aerodatabox.com/) and
 [adsb.fi](https://adsb.fi/) — adsb.fi open data is for personal, non-commercial
 use.
+
+The bundled airline database (`server/data/airlines.json`) is generated by
+`npm run build:airlines` from
+[Virtual Radar Server standing-data](https://github.com/vradarserver/standing-data)
+(CC0, pinned to a commit) merged with
+[OpenFlights](https://github.com/jpatokal/openflights) (ODbL), plus the
+hand-verified fixes in `server/data/airline-overrides.json`. The build asserts a
+probe list of known airline codes and fails rather than shipping a wrong one.
 
 ## License
 

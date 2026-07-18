@@ -68,19 +68,92 @@ function withSpaceNum(n) {
   return m ? m[1] + ' ' + m[2] : String(n || '');
 }
 
+// Known-code sets, built once from the bundled dataset + curated overrides. They
+// let splitFlight() tell a real airline prefix from a coincidental letter run.
+let CODES = null;
+function codes() {
+  if (CODES) return CODES;
+  const iata = Object.create(null), icao = Object.create(null), icaoToIata = Object.create(null);
+  // A real IATA airline designator is two chars with at least one LETTER (LL, LD
+  // or DL). Admitting an all-digit "code" would make splitFlight read the first
+  // two digits of a bare flight number as an airline ("1234" -> "12" + "34").
+  const addIata = (c) => { if (/^[A-Z0-9]{2}$/.test(c || '') && /[A-Z]/.test(c)) iata[c] = 1; };
+  Object.keys(DATA.iataIcao || {}).forEach(addIata);
+  Object.keys(DATA.nameToIata || {}).forEach((k) => addIata(DATA.nameToIata[k]));
+  Object.keys(DATA.coreToIata || {}).forEach((k) => addIata(DATA.coreToIata[k]));
+  Object.keys(CURATED_IATA).forEach((k) => addIata(CURATED_IATA[k]));
+  const pair = (i, c) => { if (/^[A-Z]{3}$/.test(c || '')) { icao[c] = 1; if (!icaoToIata[c]) icaoToIata[c] = i; } };
+  Object.keys(DATA.iataIcao || {}).forEach((i) => pair(i, DATA.iataIcao[i]));
+  Object.keys(CURATED_ICAO).forEach((i) => pair(i, CURATED_ICAO[i]));
+  CODES = { iata, icao, icaoToIata };
+  return CODES;
+}
+
+// Name normalisation mirrors scripts/build-airlines.js so the lookup keys match.
+const CORP_WORDS = { inc: 1, ltd: 1, llc: 1, plc: 1, co: 1, corp: 1, corporation: 1, company: 1,
+  group: 1, holdings: 1, holding: 1, limited: 1, sa: 1, ag: 1, gmbh: 1, srl: 1, spa: 1, as: 1, ab: 1,
+  oy: 1, nv: 1, bv: 1, pty: 1, pvt: 1, private: 1, jsc: 1, ojsc: 1, cjsc: 1, llp: 1, sas: 1, sarl: 1 };
+const GENERIC_WORDS = { airlines: 1, airline: 1, airways: 1, airway: 1, air: 1, lines: 1, line: 1,
+  aviation: 1, aviacion: 1, aerolineas: 1, aerolinea: 1, airliner: 1, aero: 1, linhas: 1, aereas: 1,
+  luchtvaartmaatschappij: 1, international: 1, intl: 1, transport: 1, transports: 1, travel: 1 };
+
+function normName(s) {
+  return String(s || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ')
+    .trim().replace(/\s+/g, ' ');
+}
+
+function coreName(s) {
+  return normName(s).split(' ').filter((w) => w && !GENERIC_WORDS[w] && !CORP_WORDS[w]).join(' ');
+}
+
+// Split a flight designator into airline prefix + number. IATA airline codes are
+// two ALPHANUMERIC characters (F9 Frontier, U2 easyJet, 6E IndiGo) — 452 of the
+// ~1100 codes we know contain a digit — so a letters-only prefix regex mis-parses
+// them ("F91234" -> "F" + "91234", five digits, no match at all). Candidate splits
+// are therefore scored, with a prefix that is a KNOWN airline code winning.
 function splitFlight(raw) {
   const s = normNumber(raw);
-  const m = s.match(/^([A-Z]{1,3})?(\d{1,4})([A-Z]?)$/);
-  if (!m) return null;
-  return { prefix: m[1] || '', digits: m[2], suffix: m[3] || '' };
+  if (!s) return null;
+  const K = codes();
+  let best = null;
+  for (let n = 0; n <= 3 && n < s.length; n++) {
+    const prefix = s.slice(0, n);
+    const m = s.slice(n).match(/^(\d{1,4})([A-Z]?)$/);
+    if (!m) continue;
+    let score;
+    if (n === 0) score = 5;                                  // bare number; airline comes from the booking
+    else if (n === 2 && K.iata[prefix]) score = 100;         // known IATA — the common, unambiguous case
+    else if (n === 3 && K.icao[prefix]) score = 90;          // known ICAO (e.g. DLH400)
+    else if (n === 2 && /^(?:[A-Z][A-Z0-9]|[0-9][A-Z])$/.test(prefix)) score = 50; // IATA-shaped, unknown
+    else if (n === 3 && /^[A-Z]{3}$/.test(prefix)) score = 40;
+    else if (n === 1 && /^[A-Z]$/.test(prefix)) score = 10;
+    else continue;
+    if (!best || score > best.score || (score === best.score && n > best.prefix.length)) {
+      best = { prefix, digits: m[1], suffix: m[2] || '', score };
+    }
+  }
+  return best;
 }
 
 function airlineToIata(name, code) {
   if (code) { const c = String(code).toUpperCase().replace(/[^A-Z0-9]/g, ''); if (/^[A-Z0-9]{2}$/.test(c)) return c; }
-  if (name) {
-    const k = String(name).toLowerCase().trim();
-    if (CURATED_IATA[k]) return CURATED_IATA[k];
-    if (DATA.nameToIata[k]) return DATA.nameToIata[k];
+  if (!name) return '';
+  // Exact, then spelling variants, then the aggressively stripped "core" name —
+  // so "Delta Airlines", "Delta Air Lines" and "Delta Air Lines, Inc." all hit DL.
+  const n = normName(name);
+  if (!n) return '';
+  const tries = [n, n.replace(/\bair lines\b/g, 'airlines'), n.replace(/\bairlines\b/g, 'air lines')];
+  for (const t of tries) {
+    if (CURATED_IATA[t]) return CURATED_IATA[t];
+    if (DATA.nameToIata[t]) return DATA.nameToIata[t];
+  }
+  const c = coreName(n);
+  if (c) {
+    if (CURATED_IATA[c]) return CURATED_IATA[c];
+    if (DATA.coreToIata && DATA.coreToIata[c]) return DATA.coreToIata[c];
+    if (DATA.nameToIata[c]) return DATA.nameToIata[c];
   }
   return '';
 }
@@ -89,6 +162,13 @@ function iataToIcao(iata, code) {
   if (code) { const c = String(code).toUpperCase().replace(/[^A-Z]/g, ''); if (/^[A-Z]{3}$/.test(c)) return c; }
   if (iata) { if (CURATED_ICAO[iata]) return CURATED_ICAO[iata]; if (DATA.iataIcao[iata]) return DATA.iataIcao[iata]; }
   return '';
+}
+
+// A 3-letter ICAO prefix typed into the flight-number box ("DLH400") must become
+// the IATA form before querying AeroDataBox, which keys on IATA numbers.
+function icaoToIata(icao) {
+  const K = codes();
+  return (icao && K.icaoToIata[icao]) || '';
 }
 
 function parseMeta(r) {
@@ -154,9 +234,18 @@ function resolveLeg(leg) {
   let number = '', callsign = '';
   const sf = leg.flight ? splitFlight(leg.flight) : null;
   if (sf) {
-    const prefix = sf.prefix || airlineToIata(leg.airline, leg.airlineCode);
-    if (prefix) number = prefix + sf.digits + sf.suffix;
-    const icao = iataToIcao(sf.prefix || prefix, leg.airlineCode);
+    const fromBooking = airlineToIata(leg.airline, leg.airlineCode);
+    // Precedence: an ICAO prefix maps back to IATA; a *known* IATA prefix in the
+    // typed number is authoritative; otherwise the booking's airline field wins,
+    // with the typed prefix as the last resort. This makes "F9 1234", bare "1234"
+    // + "Frontier Airlines", and "DLH400" all resolve to the same flight.
+    let iata;
+    if (sf.prefix.length === 3) iata = icaoToIata(sf.prefix) || fromBooking || '';
+    else if (sf.prefix && sf.score >= 100) iata = sf.prefix;
+    else iata = fromBooking || sf.prefix;
+    if (iata) number = iata + sf.digits + sf.suffix;
+    const icao = (sf.prefix.length === 3 && codes().icao[sf.prefix])
+      ? sf.prefix : iataToIcao(iata, leg.airlineCode);
     if (icao) callsign = icao + sf.digits + sf.suffix;
   }
   return {
@@ -354,15 +443,27 @@ async function trackLeg(ctx, leg, key, win) {
 }
 
 // --- key resolution: instance-wide, admin-managed -----------------------------
-// The AeroDataBox key is an instance-wide, admin-managed setting. It is set
-// through TREK's admin-guarded plugin config API
-// (PUT /api/admin/plugins/flight-tracker/config, protected by AdminGuard) and
-// arrives here decrypted in ctx.config. This is genuine admin-only: plugin
-// routes cannot themselves verify admin status (TREK's proxy maps a
-// non-existent `is_admin` field, so req.user.isAdmin is always false), so the
-// only trustworthy admin gate is TREK's own admin endpoint.
+// The AeroDataBox key is instance-wide (one key serves every user). It can arrive
+// two ways:
+//   1. ctx.config.aerodatabox_key — set through TREK's admin-guarded plugin config
+//      API (PUT /api/admin/plugins/flight-tracker/config) and injected decrypted.
+//   2. the plugin's own kv row — written by the in-widget key field below.
+// ctx.config always WINS: it is the explicitly admin-managed channel, and it is
+// frozen at activation, so letting a kv row shadow it would silently override an
+// admin's deliberate setting.
+//
+// TREK 3.4.0 fixed plugin admin-detection (TREK#1569): the proxy now builds the
+// route user as `isAdmin: user.role === 'admin'`, so req.user.isAdmin is finally
+// trustworthy — which is what makes the in-widget entry safe to re-enable. On
+// 3.3 it was hardcoded from a non-existent `is_admin` column and always false;
+// the manifest therefore requires >=3.4.0.
+function isAdminUser(u) { return !!(u && (u.isAdmin || u.is_admin)); }
+function canSetKey(ctx, user) { return isAdminUser(user); }
+
 async function getKey(ctx) {
-  return (ctx.config && ctx.config.aerodatabox_key) ? String(ctx.config.aerodatabox_key) : '';
+  if (ctx.config && ctx.config.aerodatabox_key) return String(ctx.config.aerodatabox_key);
+  const rows = await attempt(() => ctx.db.query("SELECT v FROM kv WHERE k = 'aerodatabox_key'"), []);
+  return (rows && rows[0] && rows[0].v) ? String(rows[0].v) : '';
 }
 
 // --- core: build the combined payload for a reservation ----------------------
@@ -708,6 +809,7 @@ module.exports = definePlugin({
           await attempt(() => maybeNotify(ctx, req.user, String(p.reservationId), payload));
           await attempt(() => recordUserFlight(ctx, req.user, p.tripId, String(p.reservationId), payload));
         }
+        payload.canSetKey = canSetKey(ctx, req.user); // per-request — never cached
         return json(200, payload);
       } },
 
@@ -718,6 +820,7 @@ module.exports = definePlugin({
         const payload = await cachedPayload(ctx, p.tripId, String(p.reservationId), true);
         await attempt(() => maybeNotify(ctx, req.user, String(p.reservationId), payload));
         await attempt(() => recordUserFlight(ctx, req.user, p.tripId, String(p.reservationId), payload));
+        payload.canSetKey = canSetKey(ctx, req.user); // per-request — never cached
         return json(200, payload);
       } },
 
@@ -738,7 +841,23 @@ module.exports = definePlugin({
         }
         await attempt(() => ctx.db.exec('DELETE FROM cache WHERE reservation_id = ?', rid));
         const payload = await cachedPayload(ctx, p.tripId, rid, true, number);
+        payload.canSetKey = canSetKey(ctx, req.user); // per-request — never cached
         return json(200, payload);
+      } },
+
+    // Instance-wide AeroDataBox key, settable in-widget by an admin (TREK >=3.4.0,
+    // where req.user.isAdmin is reliable). An empty value clears it. Every cached
+    // payload is dropped afterwards: entries built without a key hold no schedule
+    // data, so they would otherwise mask the newly-working lookups until TTL.
+    { method: 'POST', path: '/key', auth: true,
+      async handler(req, ctx) {
+        if (!canSetKey(ctx, req.user)) return json(403, { error: 'admin only' });
+        const p = readParams(req);
+        const val = (p.apiKey == null ? '' : String(p.apiKey)).trim();
+        if (val) await ctx.db.exec("INSERT OR REPLACE INTO kv (k, v) VALUES ('aerodatabox_key', ?)", val);
+        else await ctx.db.exec("DELETE FROM kv WHERE k = 'aerodatabox_key'");
+        await attempt(() => ctx.db.exec('DELETE FROM cache'));
+        return json(200, { ok: true, hasKey: !!val });
       } },
   ],
 });
