@@ -331,7 +331,7 @@
       en: { noflight: 'No flight number linked to this reservation.', link: 'Link', enter: 'Flight no. (e.g. LH400)',
         save: 'Save', change: 'Change flight number', redetect: 'Re-detect flights from booking', redetected: 'Re-detected from booking',
         dep: 'Departure', arr: 'Arrival', terminal: 'Terminal', gate: 'Gate', belt: 'Belt', seat: 'Seat',
-        ground: 'Ground', progress: 'Progress', flown: 'flown', togo: 'to go', reg: 'Reg', rain: 'rain',
+        ground: 'Ground', progress: 'Progress', flown: 'flown', togo: 'to go', reg: 'Reg', rain: 'rain', leg: 'Leg', legs: 'Legs',
         inair: 'In the air', alt: 'Altitude', spd: 'Ground speed', ac: 'Aircraft', onground: 'On the ground',
         openmap: 'Open on map', updated: 'Updated', refresh: 'Refresh', delayLate: 'late', delayEarly: 'early',
         ontime: 'On time', layover: 'Layover', tightConn: 'tight connection', brokenConn: 'connection at risk',
@@ -346,7 +346,7 @@
       de: { noflight: 'Keine Flugnummer mit dieser Buchung verknüpft.', link: 'Verknüpfen', enter: 'Flugnr. (z.B. LH400)',
         save: 'Speichern', change: 'Flugnummer ändern', redetect: 'Flüge neu aus Buchung erkennen', redetected: 'Aus Buchung neu erkannt',
         dep: 'Abflug', arr: 'Ankunft', terminal: 'Terminal', gate: 'Gate', belt: 'Band', seat: 'Sitz',
-        ground: 'Boden', progress: 'Verlauf', flown: 'geflogen', togo: 'bis Ziel', reg: 'Reg', rain: 'Regen',
+        ground: 'Boden', progress: 'Verlauf', flown: 'geflogen', togo: 'bis Ziel', reg: 'Reg', rain: 'Regen', leg: 'Flug', legs: 'Flüge',
         inair: 'In der Luft', alt: 'Höhe', spd: 'Geschwindigkeit', ac: 'Flugzeug', onground: 'Am Boden',
         openmap: 'Auf Karte öffnen', updated: 'Aktualisiert', refresh: 'Aktualisieren', delayLate: 'später', delayEarly: 'früher',
         ontime: 'Pünktlich', layover: 'Umstieg', tightConn: 'knapper Umstieg', brokenConn: 'Umstieg gefährdet',
@@ -720,9 +720,8 @@
       legs.forEach(function (l) { var st = l.status && l.status.status; if (st && (order[st] || 0) > worstScore) { worstScore = order[st] || 0; worst = st; } if (st === 'Arrived' && worst == null) worst = 'Arrived'; });
       var totalMin = (b.depMs && b.arrMs && b.arrMs > b.depMs) ? Math.round((b.arrMs - b.depMs) / 60000) : null;
       var sub = [];
-      sub.push(legs.length + ' ' + (legs.length === 1 ? 'Leg' : 'Legs'));
+      sub.push(legs.length + ' ' + (legs.length === 1 ? L.leg : L.legs));
       if (totalMin) sub.push(fmtDur(totalMin) + ' ' + L.total);
-      if (b.pnr) sub.push(esc(b.pnr));
       return '<div class="ft-journey"><div><div class="rt">' + route + '</div><div class="sub">' + sub.join(' · ') + '</div></div><div class="spacer"></div>' + (worst ? chip(worst) : '') + '</div>';
     }
 

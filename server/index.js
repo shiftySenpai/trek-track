@@ -468,14 +468,37 @@ async function getKey(ctx) {
 
 // --- core: build the combined payload for a reservation ----------------------
 
-async function readReservation(ctx, tripId, reservationId) {
-  return attempt(async () => {
-    const list = await ctx.trips.getReservations(Number(tripId));
-    return (list || []).find((x) => String(x.id) === String(reservationId)) || null;
-  }, null);
+// AUTHORIZATION GATE. ctx.trips is the only host surface that membership-checks a
+// read, so every route must pass through it BEFORE touching the plugin's own
+// storage. That storage (ctx.db) is a single shared database with no per-user
+// scoping, and reservation ids are sequential integers — so without this gate any
+// authenticated user could enumerate ids and read another user's itinerary out of
+// the cache, or write flight-number overrides into their reservations.
+//
+// Deliberately NOT wrapped in attempt(): swallowing RESOURCE_FORBIDDEN to null is
+// precisely what turned a failed permission check into a successful request.
+// Returns { resv } on success or { error } holding the response to send.
+async function requireOwnedReservation(ctx, tripId, reservationId) {
+  if (tripId == null || tripId === '') return { error: json(400, { error: 'tripId required' }) };
+  let list;
+  try {
+    list = await ctx.trips.getReservations(Number(tripId));
+  } catch (e) {
+    const msg = String((e && e.message) || e);
+    // The host prefixes rejections with the error code.
+    if (/^(RESOURCE_FORBIDDEN|PERMISSION_DENIED)/.test(msg)) return { error: json(403, { error: 'forbidden' }) };
+    return { error: json(502, { error: 'trip lookup failed' }) };
+  }
+  const resv = (list || []).find((x) => String(x.id) === String(reservationId));
+  // Not a member of the trip, or the reservation is not in it — same answer either
+  // way, so membership cannot be probed by comparing responses.
+  if (!resv) return { error: json(404, { error: 'not found' }) };
+  return { resv };
 }
 
-async function buildPayload(ctx, tripId, reservationId, forcedNumber) {
+// `resv` is supplied by the caller and has ALREADY passed the membership gate —
+// buildPayload never re-reads it, so there is no path here that bypasses the check.
+async function buildPayload(ctx, tripId, reservationId, forcedNumber, resv) {
   const key = await getKey(ctx);
   const hasKey = !!key;
 
@@ -487,7 +510,6 @@ async function buildPayload(ctx, tripId, reservationId, forcedNumber) {
     if (rows && rows[0] && rows[0].flight_number) { overrideNumber = normNumber(rows[0].flight_number); source = 'stored'; }
   }
 
-  const resv = tripId ? await readReservation(ctx, tripId, reservationId) : null;
   const bookingType = resv ? (resv.type || parseMeta(resv).type || null) : null;
 
   // Departure/arrival datetimes drive the countdown and the fetch windows.
@@ -529,8 +551,10 @@ async function buildPayload(ctx, tripId, reservationId, forcedNumber) {
   const queryable = rawLegs.filter((l) => l.number);
 
   const booking = {
+    // No PNR: a booking reference is bearer-ish for airline "manage my booking"
+    // portals, and copying it into a second datastore bought only a subtitle the
+    // user can already see on the reservation itself.
     type: bookingType, depMs: depMs || null, arrMs: arrMs || null, phase,
-    pnr: (resv && (resv.confirmation_number || null)) || null,
     origin: (queryable[0] && queryable[0].from) || null,
     dest: (queryable.length && queryable[queryable.length - 1].to) || null,
     legCount: queryable.length,
@@ -566,9 +590,14 @@ function ttlFor(payload) {
   return CACHE_TTL_MS;
 }
 
-async function cachedPayload(ctx, tripId, reservationId, force, forcedNumber) {
+// `tripId` here is always the VERIFIED trip from requireOwnedReservation — never
+// the raw request value. The cache read is scoped by it as defence in depth, and
+// the write persists it so the userless hooks (which cannot membership-check
+// anything) can only ever be fed rows a member actually caused.
+async function cachedPayload(ctx, tripId, reservationId, force, forcedNumber, resv) {
+  const tid = tripId != null ? String(tripId) : null;
   if (!force && !forcedNumber) {
-    const rows = await attempt(() => ctx.db.query('SELECT payload, fetched_at FROM cache WHERE reservation_id = ?', reservationId), []);
+    const rows = await attempt(() => ctx.db.query('SELECT payload, fetched_at FROM cache WHERE reservation_id = ? AND trip_id IS ?', reservationId, tid), []);
     if (rows && rows[0]) {
       try {
         const cached = JSON.parse(rows[0].payload);
@@ -581,10 +610,10 @@ async function cachedPayload(ctx, tripId, reservationId, force, forcedNumber) {
       } catch (_e) { /* refetch */ }
     }
   }
-  const payload = await buildPayload(ctx, tripId, reservationId, forcedNumber);
+  const payload = await buildPayload(ctx, tripId, reservationId, forcedNumber, resv);
   await attempt(() => ctx.db.exec(
     'INSERT OR REPLACE INTO cache (reservation_id, trip_id, payload, fetched_at) VALUES (?, ?, ?, ?)',
-    reservationId, tripId != null ? String(tripId) : null, JSON.stringify(payload), Date.now()));
+    reservationId, tid, JSON.stringify(payload), Date.now()));
   return payload;
 }
 
@@ -758,11 +787,13 @@ function json(status, body) {
 function readParams(req) {
   const q = req.query || {};
   const b = (req.body && typeof req.body === 'object') ? req.body : {};
+  // NOTE: apiKey is deliberately absent — it must never be read from the query
+  // string, where proxies, host logs and browser history would persist it in
+  // plaintext. /key reads it from the body only.
   return {
     tripId: b.tripId != null ? b.tripId : q.tripId,
     reservationId: b.reservationId != null ? b.reservationId : q.reservationId,
     flightNumber: b.flightNumber != null ? b.flightNumber : q.flightNumber,
-    apiKey: b.apiKey != null ? b.apiKey : q.apiKey,
   };
 }
 
@@ -804,7 +835,9 @@ module.exports = definePlugin({
       async handler(req, ctx) {
         const p = readParams(req);
         if (!p.reservationId) return json(400, { error: 'reservationId required' });
-        const payload = await cachedPayload(ctx, p.tripId, String(p.reservationId), false);
+        const own = await requireOwnedReservation(ctx, p.tripId, p.reservationId);
+        if (own.error) return own.error;
+        const payload = await cachedPayload(ctx, p.tripId, String(p.reservationId), false, null, own.resv);
         if (!payload.cached) {
           await attempt(() => maybeNotify(ctx, req.user, String(p.reservationId), payload));
           await attempt(() => recordUserFlight(ctx, req.user, p.tripId, String(p.reservationId), payload));
@@ -817,7 +850,9 @@ module.exports = definePlugin({
       async handler(req, ctx) {
         const p = readParams(req);
         if (!p.reservationId) return json(400, { error: 'reservationId required' });
-        const payload = await cachedPayload(ctx, p.tripId, String(p.reservationId), true);
+        const own = await requireOwnedReservation(ctx, p.tripId, p.reservationId);
+        if (own.error) return own.error;
+        const payload = await cachedPayload(ctx, p.tripId, String(p.reservationId), true, null, own.resv);
         await attempt(() => maybeNotify(ctx, req.user, String(p.reservationId), payload));
         await attempt(() => recordUserFlight(ctx, req.user, p.tripId, String(p.reservationId), payload));
         payload.canSetKey = canSetKey(ctx, req.user); // per-request — never cached
@@ -829,6 +864,10 @@ module.exports = definePlugin({
       async handler(req, ctx) {
         const p = readParams(req);
         if (!p.reservationId) return json(400, { error: 'reservationId required' });
+        // Gate FIRST: this route writes the override table and, via ctx.meta, into
+        // TREK's own reservation data.
+        const own = await requireOwnedReservation(ctx, p.tripId, p.reservationId);
+        if (own.error) return own.error;
         const rid = String(p.reservationId);
         const number = normNumber(p.flightNumber);
         if (number) {
@@ -840,7 +879,7 @@ module.exports = definePlugin({
           await attempt(() => ctx.meta.delete('reservation', Number(rid), 'flight_number'));
         }
         await attempt(() => ctx.db.exec('DELETE FROM cache WHERE reservation_id = ?', rid));
-        const payload = await cachedPayload(ctx, p.tripId, rid, true, number);
+        const payload = await cachedPayload(ctx, p.tripId, rid, true, number, own.resv);
         payload.canSetKey = canSetKey(ctx, req.user); // per-request — never cached
         return json(200, payload);
       } },
@@ -852,8 +891,11 @@ module.exports = definePlugin({
     { method: 'POST', path: '/key', auth: true,
       async handler(req, ctx) {
         if (!canSetKey(ctx, req.user)) return json(403, { error: 'admin only' });
-        const p = readParams(req);
-        const val = (p.apiKey == null ? '' : String(p.apiKey)).trim();
+        // Body only. Fail loudly rather than silently ignoring a query-string key:
+        // a caller who thinks the key was set would never rotate the leaked one.
+        if (req.query && req.query.apiKey != null) return json(400, { error: 'apiKey must be sent in the JSON body, not the query string' });
+        const b = (req.body && typeof req.body === 'object') ? req.body : {};
+        const val = (b.apiKey == null ? '' : String(b.apiKey)).trim();
         if (val) await ctx.db.exec("INSERT OR REPLACE INTO kv (k, v) VALUES ('aerodatabox_key', ?)", val);
         else await ctx.db.exec("DELETE FROM kv WHERE k = 'aerodatabox_key'");
         await attempt(() => ctx.db.exec('DELETE FROM cache'));
