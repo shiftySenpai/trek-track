@@ -45,7 +45,7 @@
       "scope": "instance",
       "required": false,
       "secret": true,
-      "hint": "Instance-wide, admin-managed. Admins can set it directly in the widget, or here / via the admin plugin-config API (PUT /api/admin/plugins/flight-tracker/config). A key set here always takes precedence over one entered in the widget. Get a free key at rapidapi.com/aedbx-aedbx/api/aerodatabox. Without it, only live position from adsb.fi is shown."
+      "hint": "Instance-wide, admin-managed. TREK renders no form for instance-scoped settings, so set it in the widget (admins see an 'Add AeroDataBox key' field on any flight) or via the admin API: PUT /api/admin/plugins/flight-tracker/config. A key set through the API always takes precedence over one entered in the widget. Get a free key at rapidapi.com/aedbx-aedbx/api/aerodatabox. Without it, only live position from adsb.fi is shown."
     }
   ]
 }

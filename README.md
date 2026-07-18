@@ -31,13 +31,22 @@ field was temporarily removed in v1.7.4.
 2. Open any flight reservation **as a TREK administrator**. Under the tracker you
    will see **“Add AeroDataBox key”** — click it, paste the key, hit save.
 3. That's it. The widget reloads with schedule data, and the key applies to
-   everyone. Admins later see **“AeroDataBox key active · Replace · Remove”**.
+   everyone.
+
+Once a key is active the field **disappears** — it is a set-once, instance-wide
+setting, and repeating it on every flight reservation would only be noise. To
+replace or remove it later, see *Changing or removing the key* below.
 
 Non-admins never see the field — only a short note that an admin can add a key.
 
-**Alternative: the admin config API.** Equivalent, and useful for scripted or
-headless setup. A key set this way **takes precedence** over one entered in the
-widget (see *Where the key is read from* below).
+> **TREK has no settings form for this key.** TREK renders a settings form only
+> for `scope: "user"` plugin settings; this key is `scope: "instance"`, which has
+> no form anywhere in the UI (the list under Admin → Plugins is read-only and
+> informational). The widget and the admin API are the two ways to set it.
+
+**Alternative: the admin config API.** Useful for scripted or headless setup.
+A key set this way **takes precedence** over one entered in the widget (see
+*Where the key is read from* below).
 
 1. Log in as a **TREK administrator**, open dev tools (**F12**) → **Console**:
    ```js
@@ -53,10 +62,32 @@ widget (see *Where the key is read from* below).
    the config, then **hard-refresh** the trip tab (**Ctrl/Cmd+Shift+R**).
 
 **Where the key is read from.** `ctx.config.aerodatabox_key` (the admin config
-API, and the setting in Admin → Plugins) is checked **first**; the key stored by
-the in-widget field is used only when that is empty. So an explicitly
-admin-configured key can never be silently shadowed by the widget. Setting or
-clearing the key drops the response cache, so data updates immediately.
+API) is checked **first**; the key stored by the in-widget field is used only
+when that is empty. So an explicitly admin-configured key can never be silently
+shadowed by the widget. Setting or clearing the key drops the response cache, so
+data updates immediately.
+
+### Changing or removing the key
+
+Which command you need depends on **how the key was set** — and they are not
+interchangeable:
+
+- **Set via the admin config API** → clear it with the same endpoint:
+  `PUT /api/admin/plugins/flight-tracker/config` with `{ aerodatabox_key: '' }`.
+- **Set in the widget** → clear it through the plugin's own route. Note that the
+  config-API call above will **not** remove a widget-set key: it only empties
+  `ctx.config`, after which the plugin falls back to the stored key and it
+  reappears. As a **TREK administrator**, in dev tools (**F12**) → **Console**:
+  ```js
+  await fetch('/api/plugins/flight-tracker/key', {
+    method: 'POST', credentials: 'include',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ apiKey: '' })          // or a new key to replace it
+  }).then(r => r.json()).then(console.log);
+  ```
+  `{ ok: true, hasKey: false }` means it was cleared. The “Add AeroDataBox key”
+  field then reappears in the widget for admins. This route is admin-only and
+  answers `403` for anyone else.
 
 ## What it does
 
