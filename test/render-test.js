@@ -48,7 +48,10 @@ try {
 const KIT_CSS = kit.TREK_UI_CSS;
 const MARKER = kit.TREK_UI_MARKER || '<!-- trek:ui -->';
 
-const widget = fs.readFileSync(path.join(REPO, 'client', 'index.html'), 'utf8');
+// FT_CLIENT points the harness at an older widget build, to confirm a scenario
+// actually fails against the code it was written to catch.
+const WIDGET = process.env.FT_CLIENT ? path.resolve(process.env.FT_CLIENT) : path.join(REPO, 'client', 'index.html');
+const widget = fs.readFileSync(WIDGET, 'utf8');
 if (widget.indexOf(MARKER) === -1) throw new Error('trek:ui marker not found in client/index.html');
 
 // ---------------------------------------------------------------- fixtures
@@ -80,6 +83,40 @@ const preflightLeg = leg({
 preflightLeg.status.departure = Object.assign({}, preflightLeg.status.departure, {
   scheduled: iso(now + 3 * 3600e3), revised: null, scheduledUtc: iso(now + 3 * 3600e3), revisedUtc: null,
 });
+
+// Two legs connecting through FRA. `connMin` is the gap between leg 1's ARRIVAL and
+// leg 2's DEPARTURE; a negative value means the inbound is delayed past the onward
+// flight, i.e. the connection is already gone.
+function legPair(connMin) {
+  const arr1 = now + 60 * 60e3;
+  const dep2 = arr1 + connMin * 60e3;
+  const iso = (ms) => new Date(ms).toISOString().replace('Z', '');
+  const mk = (number, from, to, depMs, arrMs, status) => leg({
+    number, from, to,
+    status: {
+      number, status: status || 'Expected', airline: 'Lufthansa', delayMin: null, depDelayMin: null,
+      aircraftModel: 'Airbus A320', aircraftReg: 'D-AIZA',
+      departure: { iata: from, name: from, terminal: '1', gate: 'A1', scheduled: iso(depMs), revised: null, scheduledUtc: iso(depMs), revisedUtc: null, lat: 48.1, lon: 16.5 },
+      arrival: { iata: to, name: to, terminal: '2', gate: null, baggageBelt: null, scheduled: iso(arrMs), revised: null, scheduledUtc: iso(arrMs), revisedUtc: null, lat: 50.0, lon: 8.5 },
+    },
+    live: null, weather: null, inbound: null, errors: [],
+  });
+  return [
+    mk('LH1234', 'VIE', 'FRA', now - 30 * 60e3, arr1),
+    mk('LH400', 'FRA', 'JFK', dep2, dep2 + 8 * 3600e3),
+  ];
+}
+
+// Three legs where the first has already arrived — that one collapses.
+function threeLegs() {
+  const pair = legPair(90);
+  const first = JSON.parse(JSON.stringify(pair[0]));
+  first.status.status = 'Arrived';
+  const third = JSON.parse(JSON.stringify(pair[1]));
+  third.number = 'LH500'; third.from = 'JFK'; third.to = 'LAX';
+  third.status.number = 'LH500'; third.status.departure.iata = 'JFK'; third.status.arrival.iata = 'LAX';
+  return [first, pair[1], third];
+}
 
 const base = { applicable: true, source: 'detected', legs: [leg()], updatedAt: now,
   booking: { type: 'flight', depMs: now - 3600e3, arrMs: now + 39600e3, phase: 'active', pnr: 'ABC123', origin: 'MUC', dest: 'LAX', legCount: 1 } };
@@ -113,6 +150,32 @@ const SCENARIOS = [
     payload: Object.assign({}, base, { hasKey: true, canSetKey: true,
       legs: [leg({ live: Object.assign({}, leg().live, { seenPos: 2700 }) })] }),
     expect: { has: ['out of ADS-B coverage'], not: ['ft-dot pulse', 'Progress'] } },
+  // --- multi-leg ------------------------------------------------------------
+  // Two legs with a comfortable 2h connection: journey header + layover connector.
+  { id: 'multileg-normal', w: 420,
+    payload: Object.assign({}, base, { hasKey: true, canSetKey: true,
+      legs: [legPair(120)[0], legPair(120)[1]],
+      booking: Object.assign({}, base.booking, { legCount: 2, origin: 'VIE', dest: 'JFK' }) }),
+    expect: { has: ['ft-journey', 'ft-layover', 'Layover'], not: ['ft-layover broken', 'ft-layover tight'] } },
+  // 35-minute connection -> the tight warning must fire.
+  { id: 'multileg-tight', w: 420,
+    payload: Object.assign({}, base, { hasKey: true, canSetKey: true,
+      legs: legPair(35),
+      booking: Object.assign({}, base.booking, { legCount: 2, origin: 'VIE', dest: 'JFK' }) }),
+    expect: { has: ['ft-layover tight'], not: ['ft-layover broken'] } },
+  // Inbound delayed PAST the onward departure. The old minute-of-day arithmetic
+  // wrapped this into a comfortable "22 h layover"; it must now read as broken.
+  { id: 'multileg-broken', w: 420,
+    payload: Object.assign({}, base, { hasKey: true, canSetKey: true,
+      legs: legPair(-120),
+      booking: Object.assign({}, base.booking, { legCount: 2, origin: 'VIE', dest: 'JFK' }) }),
+    expect: { has: ['ft-layover broken'], not: ['22 h', 'ft-layover tight'] } },
+  // 3+ legs with an arrived first leg -> it collapses, and must be a real button.
+  { id: 'multileg-collapsed', w: 420,
+    payload: Object.assign({}, base, { hasKey: true, canSetKey: true,
+      legs: threeLegs(),
+      booking: Object.assign({}, base.booking, { legCount: 3, origin: 'VIE', dest: 'JFK' }) }),
+    expect: { has: ['ft-collapsed'], collapsedButtons: 1 } },
   // errors must be visible: a capped key looked identical to "no data for this flight"
   { id: 'quota-error', w: 420,
     payload: Object.assign({}, base, { hasKey: true, canSetKey: true, errors: ['status: 429 quota exceeded'] }),
@@ -181,6 +244,9 @@ setTimeout(function () {
     liveRegionOutsideApp: !!(document.querySelector('#ft-live') && !app.contains(document.querySelector('#ft-live'))),
     collapsedAreButtons: Array.prototype.every.call(
       document.querySelectorAll('.ft-collapsed'), function (e) { return e.tagName === 'BUTTON'; }),
+    collapsedCount: document.querySelectorAll('.ft-collapsed').length,
+    legCount: document.querySelectorAll('.ft-leg').length,
+    layoverText: Array.prototype.map.call(document.querySelectorAll('.ft-layover'), function (e) { return e.textContent.trim(); }),
     legacy: document.querySelectorAll('.ft-pill, .ft-chip, .ft-meta, .ft-weather, .ft-inbound, .ft-live-head, .ft-progline, .ft-maplink').length
   };
   document.getElementById('testout').textContent = 'TESTOUT:' + JSON.stringify(out);
@@ -227,6 +293,9 @@ for (const sc of SCENARIOS) {
   if (!r.liveRegionOutsideApp) probs.push('live region is inside #app — render() would rebuild it and cancel announcements');
   if (!r.collapsedAreButtons) probs.push('collapsed legs are not real buttons (keyboard-unreachable)');
   if (!r.lang) probs.push('document lang not set — German announced with English phonemes');
+  if (ex.collapsedButtons != null && r.collapsedCount !== ex.collapsedButtons) {
+    probs.push('expected ' + ex.collapsedButtons + ' collapsed leg(s), got ' + r.collapsedCount);
+  }
   if (ex.noOverflow) {
     if (r.scrollW > r.clientW + 1) probs.push('horizontal overflow: scrollW ' + r.scrollW + ' > clientW ' + r.clientW);
     if (r.overflowers && r.overflowers.length) probs.push('overflowing elements: ' + r.overflowers.join(' | '));
