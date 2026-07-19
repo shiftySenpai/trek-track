@@ -7,8 +7,10 @@
 // creates once the first page has been made through the web UI. Pages are authored
 // in the main repo so they review alongside the code, and mirrored here.
 //
-// Images are NOT copied: the pages reference raw.githubusercontent.com URLs on the
-// main branch, so screenshots stay versioned with the code that produced them.
+// Images are NOT copied. The pages reference raw.githubusercontent.com URLs on the
+// main branch, so there is one source of truth and screenshots stay versioned with
+// the code that produced them. The consequence: images 404 until the commit carrying
+// them reaches main.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -52,6 +54,11 @@ try {
   }
 
   let changed = 0;
+
+  // an earlier revision mirrored docs/img into the wiki; drop it if still present
+  const staleImg = path.join(tmp, 'img');
+  if (fs.existsSync(staleImg)) { fs.rmSync(staleImg, { recursive: true, force: true }); changed++; console.log('  removed mirrored img/'); }
+
   for (const p of pages) {
     const to = path.join(tmp, p);
     const next = fs.readFileSync(path.join(SRC, p), 'utf8');
