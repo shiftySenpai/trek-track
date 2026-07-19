@@ -450,6 +450,22 @@ async function trackLeg(ctx, leg, key, win) {
     });
     if (live.error) errors.push('live: ' + live.error);
   }
+  // The fetch above is gated on the BOOKING's clock, which can be hours out (the
+  // reservation carries no timezone, and a booked time need not match the real
+  // schedule). Once the date-pinned status gives us authoritative UTC instants,
+  // re-check against those and DISCARD a position that cannot belong to this
+  // flight — otherwise a flight departing tomorrow shows the aircraft currently
+  // operating today's rotation, complete with an "in the air" chip and a nonsense
+  // "0 % flown, in 28 h" progress read-out.
+  if (live.data && status && !AIRBORNE[status.status]) {
+    const H = 3600 * 1000;
+    const depU = toMs(status.departure && (status.departure.revisedUtc || status.departure.scheduledUtc));
+    const arrU = toMs(status.arrival && (status.arrival.revisedUtc || status.arrival.scheduledUtc));
+    const now = Date.now();
+    const plausible = (depU == null && arrU == null) ||
+      (now >= (depU != null ? depU - 1 * H : -Infinity) && now <= (arrU != null ? arrU + 2 * H : Infinity));
+    if (!plausible) live = { data: null };
+  }
   // Destination weather at the arrival airport for the arrival day (host-cached,
   // free/tenant-free broker). Skipped once the flight is in the past.
   let weather = null;
