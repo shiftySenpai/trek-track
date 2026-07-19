@@ -45,14 +45,65 @@
     .ft-flight { font-size: 15px; font-weight: 700; letter-spacing: .2px; }
     .ft-air { color: var(--text-muted); font-size: 12px; }
 
-    /* status chip with glyph */
-    .ft-chip { margin-left: auto; display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 999px; }
-    .ft-chip .ft-icon { width: 12px; height: 12px; }
-    .ft-chip.s-success { color: var(--success,#16a34a); background: color-mix(in srgb, var(--success,#16a34a) 15%, transparent); }
-    .ft-chip.s-info    { color: var(--info,#2563eb);    background: color-mix(in srgb, var(--info,#2563eb) 15%, transparent); }
-    .ft-chip.s-warning { color: var(--warning,#d97706); background: color-mix(in srgb, var(--warning,#d97706) 16%, transparent); }
-    .ft-chip.s-danger  { color: var(--danger,#dc2626);  background: color-mix(in srgb, var(--danger,#dc2626) 15%, transparent); }
-    .ft-chip.s-muted   { color: var(--text-muted); background: var(--bg-hover, rgba(0,0,0,.05)); }
+    /* PILLS = TREK's own .trek-chip. The widget deliberately keeps no chip of its
+       own: the neutral tier is the unmodified kit chip (--accent-subtle ground,
+       borderless), and colour only ever comes from the kit's semantic modifiers.
+       Sized one notch down widget-wide so a 320px sidebar still fits a cluster. */
+    #app .trek-chip { font-size: 11px; padding: 3px 9px; gap: 5px; max-width: 100%; min-width: 0; }
+    #app .trek-chip .ft-icon { width: 12px; height: 12px; }
+    .ft-head .trek-chip { margin-left: auto; }   /* status chip stays right-aligned */
+
+    /* key/value inside a chip — the one thing the kit has no component for.
+       .ft-v always carries the truncation so a long value can never force the
+       nowrap chip to overflow a narrow widget. */
+    .ft-p .ft-k { color: var(--text-muted); font-weight: 500; }
+    .ft-p .ft-v { color: var(--text-primary); font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+    .ft-p.trek-chip--accent .ft-k, .ft-p.trek-chip--success .ft-k, .ft-p.trek-chip--warning .ft-k,
+    .ft-p.trek-chip--info .ft-k, .ft-p.trek-chip--danger .ft-k { color: currentColor; opacity: .7; }
+    .ft-p.trek-chip--accent .ft-v, .ft-p.trek-chip--success .ft-v, .ft-p.trek-chip--warning .ft-v,
+    .ft-p.trek-chip--info .ft-v, .ft-p.trek-chip--danger .ft-v { color: currentColor; }
+
+    /* GROUPED FACT BANDS. What fixed the "jumbled run-on" is less the pills than
+       the fixed left rail: every band label lines up in one column, so terminal /
+       seat / weather read as three labelled groups instead of three loose rows.
+       Separation is a hairline, not whitespace — density is preserved. */
+    .ft-band { display: grid; grid-template-columns: 58px minmax(0, 1fr); align-items: start; gap: 6px 10px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--border-faint); }
+    .ft-band--first { margin-top: 10px; padding-top: 0; border-top: 0; }
+    .ft-bandbody { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+    .ft-band--stack .ft-bandbody { gap: 4px; }
+    /* The label WRAPS rather than truncating: at 320px "In the air" would ellipsise
+       to "In th…", which defeats the rail. It wraps only at SPACES — break-word
+       would split "Progress" into "PROGRE/SS". The rail is sized so the longest
+       single word still fits on one line. */
+    .ft-blabel { font-size: 10px; letter-spacing: .04em; line-height: 1.3; padding-top: 4px; min-width: 0; overflow-wrap: normal; word-break: normal; hyphens: none; }
+    .ft-cl { gap: 6px; }
+
+    /* Measurements are NOT pills — this is the counterweight that stops the bands
+       becoming pill soup. Categorical + stable = chip; measured + changing = numeral. */
+    .ft-num { font-size: 15px; font-weight: 700; color: var(--text-primary); display: inline-flex; align-items: center; gap: 5px; line-height: 1.15; }
+    .ft-num--sm { font-size: 12px; font-weight: 600; }
+    .ft-icon--wx { width: 16px; height: 16px; color: var(--text-muted); }
+    .ft-sub { font-size: 11px; line-height: 1.35; }
+    .ft-nosig { margin: 2px 0 0; font-size: 11px; }
+    .ft-dot--idle { background: var(--text-faint); }
+    /* visually hidden, still announced */
+    .ft-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
+    .ft-progrow { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+    .ft-grow { flex: 1 1 auto; }
+    .ft-coords { font-size: 10px; color: var(--text-muted); }
+    .ft-btn-xs { padding: 3px 9px; font-size: 11px; gap: 5px; border-radius: 999px; text-decoration: none; line-height: 1.4; }
+    .ft-btn-xs .ft-icon { width: 12px; height: 12px; }
+    .ft-btn-xs:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+    /* Narrow sidebar: the rail SHRINKS but never stacks — stacking would destroy
+       the column alignment at exactly the width where it matters most. */
+    @media (max-width: 340px) {
+      .ft-band { grid-template-columns: 50px minmax(0, 1fr); gap: 5px 8px; }
+      .ft-blabel { font-size: 9px; letter-spacing: .01em; }
+      #app .trek-chip { font-size: 10px; padding: 3px 8px; gap: 4px; }
+      .ft-num { font-size: 14px; }
+      .ft-wxtail { display: none; }
+    }
 
     .ft-route { display: grid; grid-template-columns: 1fr 40px 1fr; align-items: start; gap: 6px; }
     .ft-ap { min-width: 0; }
@@ -64,7 +115,7 @@
     .ft-times { display: grid; grid-template-columns: 1fr 40px 1fr; gap: 6px; margin-top: 8px; }
     .ft-times .arr { text-align: right; }
     .ft-times .mid { }
-    .ft-t-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-faint); }
+    .ft-t-label { font-size: 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); }
     .ft-t-sched { font-size: 15px; font-weight: 600; }
     .ft-t-rev { font-size: 12px; display: inline-flex; align-items: center; gap: 2px; }
     .ft-t-rev.late { color: var(--danger,#dc2626); }
@@ -80,27 +131,16 @@
     .ft-prog .end.r { right: 0; background: var(--border-primary, #bbb); }
     .ft-prog .dot { position: absolute; top: 0; width: 8px; height: 8px; border-radius: 50%; background: var(--success, #16a34a); box-shadow: 0 0 0 2px var(--bg-card, #fff); transform: translateX(-50%); }
 
-    .ft-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
-    .ft-pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; background: var(--bg-card, transparent); border: 1px solid var(--border-faint); color: var(--text-secondary); }
-    .ft-pill b { color: var(--text-primary); font-weight: 600; }
-
-    .ft-live { margin-top: 10px; }
-    .ft-live-head { display: flex; align-items: center; gap: 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--text-muted); margin-bottom: 8px; }
-    .ft-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success,#16a34a); }
-    .ft-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+    .ft-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success,#16a34a); flex: 0 0 auto; }
+    /* auto-fit, not repeat(3,1fr): registration moved out to a chip, so two tiles
+       share the width and "34,000 ft" can never wrap mid-number on a narrow card */
+    .ft-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 8px 12px; }
     .ft-stat .v { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 3px; }
     .ft-stat .k { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-faint); }
     /* minimap (bundled inline vector world — no external tiles) */
     .ft-minimap { margin-top: 10px; border-radius: var(--radius-md,12px); overflow: hidden; background: var(--ft-surface); border: 1px solid var(--ft-surface-line); }
     .ft-minimap svg { display: block; width: 100%; height: 132px; }
-    .ft-progline { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; font-size: 11px; color: var(--text-muted); }
-    .ft-progline b { color: var(--text-primary); font-weight: 600; }
-    .ft-progline .sep { color: var(--text-faint); }
     @media (prefers-reduced-motion: no-preference) { .ft-planepulse { animation: ftpulse 2.2s ease-out infinite; } }
-    .ft-maplink { margin-top: 8px; font-size: 11px; }
-    .ft-maplink a { color: var(--accent,#2563eb); text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
-    .ft-maplink a:hover { text-decoration: underline; }
-    .ft-maplink .co { color: var(--text-faint); }
 
     /* layover connector */
     .ft-layover { display: flex; align-items: center; gap: 8px; margin: 2px 0 2px 4px; font-size: 11px; color: var(--text-muted); }
@@ -111,25 +151,18 @@
     .ft-layover.broken .ln { background: var(--danger,#dc2626); }
 
     /* collapsed completed leg */
-    .ft-collapsed { display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-size: 12px; color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-md,12px); background: var(--ft-surface); border: 1px solid var(--ft-surface-line); }
+    .ft-collapsed { width: 100%; text-align: left; font: inherit; color: var(--text-secondary); display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-size: 12px; color: var(--text-secondary); cursor: pointer; border-radius: var(--radius-md,12px); background: var(--ft-surface); border: 1px solid var(--ft-surface-line); }
     .ft-collapsed:hover { background: color-mix(in srgb, var(--text-primary) 6%, transparent); }
+    .ft-collapsed:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
     .ft-collapsed .ft-icon { color: var(--success,#16a34a); }
     .ft-collapsed .grow { flex: 1; }
     .ft-collapsed .rt { font-weight: 600; color: var(--text-primary); }
 
-    .ft-seat { font-size: 11px; color: var(--text-faint); margin-top: 6px; }
-    .ft-weather { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--text-secondary); }
-    .ft-weather .ft-icon { width: 16px; height: 16px; color: var(--text-muted); }
-    .ft-weather .lbl { font-size: 10px; text-transform: uppercase; letter-spacing: .4px; color: var(--text-faint); }
-    .ft-weather .mut { color: var(--text-muted); }
-    .ft-weather b { color: var(--text-primary); }
-    .ft-inbound { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; font-size: 12px; color: var(--text-secondary); }
-    .ft-inbound .ft-icon { width: 14px; height: 14px; color: var(--accent, #7c3aed); }
     .ft-homez { font-size: 11px; color: var(--text-faint); margin-top: 1px; }
 
     /* footer + actions */
     .ft-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 12px; }
-    .ft-updated { font-size: 11px; color: var(--text-faint); }
+    .ft-updated { font-size: 11px; color: var(--text-muted); }
     .ft-actions { display: flex; gap: 2px; }
     .ft-iconbtn { background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 6px; border-radius: 8px; display: inline-flex; line-height: 0; }
     .ft-iconbtn .ft-icon { width: 16px; height: 16px; }
@@ -140,13 +173,11 @@
     .ft-editrow input { flex: 1; min-width: 0; }
     .ft-empty { color: var(--text-muted); font-size: 12px; }
     .ft-hint { color: var(--text-faint); font-size: 11px; margin-top: 8px; }
-    .ft-keyadmin, .ft-keyactive { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; line-height: 1.4; }
-    .ft-keyadmin svg, .ft-keyactive svg { flex: 0 0 auto; width: 13px; height: 13px; opacity: .8; }
-    .ft-linkbtn { background: none; border: 0; padding: 0; margin: 0; font: inherit; color: var(--accent); cursor: pointer; }
-    .ft-linkbtn:hover { text-decoration: underline; }
+    .ft-keyadmin { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; line-height: 1.4; }
+    .ft-keyadmin svg { flex: 0 0 auto; width: 13px; height: 13px; opacity: .8; }
     .ft-err { color: var(--danger,#dc2626); font-size: 11px; margin-top: 6px; }
     .ft-keyrow { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border-faint); }
-    .ft-keytoggle { background: none; border: none; color: var(--text-faint); font-size: 11px; cursor: pointer; padding: 3px 0; display: inline-flex; align-items: center; gap: 5px; }
+    .ft-keytoggle { background: none; border: none; color: var(--text-muted); font-size: 11px; cursor: pointer; padding: 3px 0; display: inline-flex; align-items: center; gap: 5px; }
     .ft-keytoggle:hover { color: var(--text-secondary); }
     .ft-keytoggle .ft-icon { width: 13px; height: 13px; }
 
@@ -170,6 +201,9 @@
 </head>
 <body>
   <div id="app"><div class="ft-skel big"></div><div class="ft-skel line" style="width:60%"></div></div>
+  <!-- Sibling of #app on purpose: render() rebuilds #app, and rebuilding a live
+       region cancels pending announcements. -->
+  <div id="ft-live" class="ft-sr" role="status" aria-live="polite" aria-atomic="true"></div>
   <script>
   (function () {
     var PLANE_D = 'M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z';
@@ -258,7 +292,20 @@
       var lats = all.map(function (p) { return p.lat; }), lons = all.map(function (p) { return p.lon; });
       var minLat = Math.min.apply(null, lats), maxLat = Math.max.apply(null, lats);
       var minLon = Math.min.apply(null, lons), maxLon = Math.max.apply(null, lons);
-      var spanLat = Math.max(maxLat - minLat, 4), spanLon = Math.max(maxLon - minLon, 4);
+      // Minimum viewport. With a route we can frame it tightly, but with ONLY a live
+      // fix (no airport coordinates — the state every user without an AeroDataBox
+      // key is permanently in) both extents collapse to a point. A 4° window then
+      // zooms so far in that the bundled coarse world outline has no geometry to
+      // show inland, and the map renders as an empty grey box. Frame a continent
+      // instead, so the aircraft sits in recognisable geography.
+      // NB: this has to expand the EXTENT, not just feed the padding calculation —
+      // a bare Math.max on the span left the extent at a point and only widened the
+      // margin, which is how a single fix still ended up in a ~6deg window.
+      var minSpan = route ? 4 : 45;
+      var cLat = (minLat + maxLat) / 2, cLon = (minLon + maxLon) / 2;
+      if (maxLat - minLat < minSpan) { minLat = cLat - minSpan / 2; maxLat = cLat + minSpan / 2; }
+      if (maxLon - minLon < minSpan) { minLon = cLon - minSpan / 2; maxLon = cLon + minSpan / 2; }
+      var spanLat = maxLat - minLat, spanLon = maxLon - minLon;
       var padLat = spanLat * 0.22 + 2, padLon = spanLon * 0.22 + 2;
       minLat -= padLat; maxLat += padLat; minLon -= padLon; maxLon += padLon;
       spanLat = maxLat - minLat; spanLon = maxLon - minLon;
@@ -303,30 +350,32 @@
       en: { noflight: 'No flight number linked to this reservation.', link: 'Link', enter: 'Flight no. (e.g. LH400)',
         save: 'Save', change: 'Change flight number', redetect: 'Re-detect flights from booking', redetected: 'Re-detected from booking',
         dep: 'Departure', arr: 'Arrival', terminal: 'Terminal', gate: 'Gate', belt: 'Belt', seat: 'Seat',
+        ground: 'Ground', progress: 'Progress', flown: 'flown', togo: 'to go', reg: 'Reg', rain: 'rain', leg: 'Leg', legs: 'Legs', lastseen: 'Last seen',
         inair: 'In the air', alt: 'Altitude', spd: 'Ground speed', ac: 'Aircraft', onground: 'On the ground',
         openmap: 'Open on map', updated: 'Updated', refresh: 'Refresh', delayLate: 'late', delayEarly: 'early',
         ontime: 'On time', layover: 'Layover', tightConn: 'tight connection', brokenConn: 'connection at risk',
         nostatus: 'No live schedule right now.', total: 'total', journey: 'Journey',
-        keyhint: 'Add an AeroDataBox key for schedule, gate and delay data.', keyadd: 'Add AeroDataBox key',
+        keyhint: 'Instance-wide — unlocks schedule, gate and delay data for everyone.', keyadd: 'Add AeroDataBox key',
         keyph: 'Paste RapidAPI key', keysaved: 'Key saved', detected: 'Detected from booking',
         departsIn: 'Departs in', soon: 'Live status appears ~48 h before departure.', day: 'day', days: 'days',
         h: 'h', min: 'min', remaining: 'in', nosignal: 'Position temporarily out of ADS-B coverage',
         inbound: 'Aircraft inbound', boarding: 'Boarding', yourtime: 'your time', couldnt: "Couldn't read a flight number — enter it:",
-        keyactive: 'AeroDataBox key active', keyreplace: 'Replace', keyremove: 'Remove', keycleared: 'Key removed', keynotallowed: 'This key was set by someone else',
+        keycleared: 'Key removed', keynotallowed: 'Only a TREK admin can change this key',
         keyconfig: 'No AeroDataBox key configured — a TREK admin can set it in the plugin configuration to unlock schedule, gate and delay data.' },
       de: { noflight: 'Keine Flugnummer mit dieser Buchung verknüpft.', link: 'Verknüpfen', enter: 'Flugnr. (z.B. LH400)',
         save: 'Speichern', change: 'Flugnummer ändern', redetect: 'Flüge neu aus Buchung erkennen', redetected: 'Aus Buchung neu erkannt',
         dep: 'Abflug', arr: 'Ankunft', terminal: 'Terminal', gate: 'Gate', belt: 'Band', seat: 'Sitz',
+        ground: 'Boden', progress: 'Verlauf', flown: 'geflogen', togo: 'bis Ziel', reg: 'Reg', rain: 'Regen', leg: 'Flug', legs: 'Flüge', lastseen: 'Zuletzt gesehen vor',
         inair: 'In der Luft', alt: 'Höhe', spd: 'Geschwindigkeit', ac: 'Flugzeug', onground: 'Am Boden',
         openmap: 'Auf Karte öffnen', updated: 'Aktualisiert', refresh: 'Aktualisieren', delayLate: 'später', delayEarly: 'früher',
         ontime: 'Pünktlich', layover: 'Umstieg', tightConn: 'knapper Umstieg', brokenConn: 'Umstieg gefährdet',
         nostatus: 'Aktuell kein Live-Fahrplan.', total: 'gesamt', journey: 'Reise',
-        keyhint: 'AeroDataBox-Key ergänzen für Fahrplan, Gate und Verspätung.', keyadd: 'AeroDataBox-Key hinzufügen',
+        keyhint: 'Instanzweit — schaltet Fahrplan, Gate und Verspätung für alle frei.', keyadd: 'AeroDataBox-Key hinzufügen',
         keyph: 'RapidAPI-Key einfügen', keysaved: 'Key gespeichert', detected: 'Aus Buchung erkannt',
         departsIn: 'Abflug in', soon: 'Live-Status erscheint ~48 h vor Abflug.', day: 'Tag', days: 'Tage',
         h: 'Std', min: 'Min', remaining: 'noch', nosignal: 'Position gerade ohne ADS-B-Empfang',
         inbound: 'Flieger im Anflug', boarding: 'Boarding', yourtime: 'deine Zeit', couldnt: 'Flugnummer nicht erkannt — bitte eingeben:',
-        keyactive: 'AeroDataBox-Key aktiv', keyreplace: 'Ersetzen', keyremove: 'Entfernen', keycleared: 'Key entfernt', keynotallowed: 'Dieser Key wurde von jemand anderem gesetzt',
+        keycleared: 'Key entfernt', keynotallowed: 'Nur ein TREK-Admin kann diesen Key ändern',
         keyconfig: 'Kein AeroDataBox-Key konfiguriert — ein TREK-Admin kann ihn in der Plugin-Konfiguration setzen (für Fahrplan, Gate und Verspätung).' }
     };
     var SL = {
@@ -400,13 +449,18 @@
       if (u && /f/i.test(String(u))) return Math.round(c * 9 / 5 + 32) + '°F';
       return Math.round(c) + '°C';
     }
-    function weatherLine(w, iata) {
+    // Destination weather as a band body: the temperature is a measurement (numeral),
+    // the condition is categorical (chip). Rain only becomes a warning chip when it
+    // is actually worth packing for — colour stays semantic, never decorative.
+    function weatherBody(w) {
       if (!w || w.temp == null) return '';
-      var bits = [svg(WICON[w.main] || 'wcloud'), '<span class="lbl">' + esc(iata || '') + '</span>', '<b>' + fmtTemp(w.temp) + '</b>'];
-      if (w.description || w.main) bits.push('<span class="mut">' + esc(w.description || w.main) + '</span>');
-      if (w.tempMin != null && w.tempMax != null) bits.push('<span class="mut">' + fmtTemp(w.tempMin) + '/' + fmtTemp(w.tempMax) + '</span>');
-      if (w.precipProb != null && w.precipProb >= 20) bits.push('<span class="mut">' + w.precipProb + ' %</span>');
-      return '<div class="ft-weather">' + bits.join(' ') + '</div>';
+      var parts = [num(svg(WICON[w.main] || 'wcloud', 'ft-icon ft-icon--wx') + fmtTemp(w.temp))];
+      if (w.description || w.main) parts.push(kv('', w.description || w.main));
+      if (w.tempMin != null && w.tempMax != null) {
+        parts.push('<span class="trek-faint ft-sub ft-wxtail">' + esc(fmtTemp(w.tempMin) + ' / ' + fmtTemp(w.tempMax)) + '</span>');
+      }
+      if (w.precipProb != null && w.precipProb >= 20) parts.push(kv('', w.precipProb + ' % ' + L.rain, 'trek-chip--warning'));
+      return cluster(parts);
     }
 
     function applyTokens(m) {
@@ -430,12 +484,38 @@
     function relTime(ts) { if (!ts) return ''; var d = Math.round((Date.now() - ts) / 1000); if (d < 60) return d + 's'; if (d < 3600) return Math.round(d / 60) + 'm'; return Math.round(d / 3600) + 'h'; }
     function withSpace(n) { var m = String(n || '').match(/^([A-Z]{2,3})(\d.*)$/); return m ? m[1] + ' ' + m[2] : n; }
 
+    // PILL DISCIPLINE — the rule that keeps the bands from becoming pill soup.
+    // A fact becomes a .trek-chip only if it is CATEGORICAL and STABLE: a state, an
+    // identifier, or a place label (status, aircraft type, registration, terminal,
+    // gate, belt, seat, boarding time, weather condition). A fact that is MEASURED
+    // and CHANGING stays a bare emphasised numeral (.ft-num): altitude, speed,
+    // temperature, % flown, time remaining, distance, coordinates. Ticking values
+    // must not look like the one genuinely tappable element in the card.
+    // Colour is semantic only: one coloured chip per band, and --accent is reserved
+    // for the single "this one is about YOU" anchor, the seat.
+    function variantClass(v) { return (v && v !== 'muted') ? ' trek-chip--' + v : ''; }
     function chip(status) {
-      var v = statusVariant(status);
-      return '<span class="ft-chip s-' + v + '">' + svg(statusGlyph(status)) + esc(LS[status] || status) + '</span>';
+      return '<span class="trek-chip' + variantClass(statusVariant(status)) + ' ft-p">' +
+        svg(statusGlyph(status)) + '<span class="ft-v">' + esc(LS[status] || status) + '</span></span>';
     }
-    function pill(k, v) { return '<span class="ft-pill">' + esc(k) + ' <b>' + esc(v) + '</b></span>'; }
+    // categorical fact -> kit chip. The value ALWAYS gets .ft-v, so truncation is
+    // structural and can't be forgotten at a call site.
+    function kv(k, v, mod, ic) {
+      return '<span class="trek-chip' + (mod ? ' ' + mod : '') + ' ft-p">' + (ic ? svg(ic) : '') +
+        (k ? '<span class="ft-k">' + esc(k) + '</span>' : '') +
+        '<span class="ft-v">' + esc(v) + '</span></span>';
+    }
+    // A band renders only when it has content, so a label can never float alone.
+    function band(label, body, mod) {
+      return body ? '<div class="ft-band' + (mod || '') + '" role="group" aria-label="' + esc(label) + '">' +
+        '<span class="trek-title ft-blabel">' + esc(label) + '</span>' +
+        '<div class="ft-bandbody">' + body + '</div></div>' : '';
+    }
+    function cluster(parts) { var p = parts.filter(Boolean); return p.length ? '<div class="trek-cluster ft-cl">' + p.join('') + '</div>' : ''; }
     function stat(k, v) { return '<div class="ft-stat"><div class="v">' + v + '</div><div class="k">' + esc(k) + '</div></div>'; }
+    function num(v, sm) { return '<span class="ft-num' + (sm ? ' ft-num--sm' : '') + '">' + v + '</span>'; }
+    // NB: not called `sub` — journeyHeader() has a local `sub` array that would shadow it.
+    function faint(t) { return '<span class="trek-faint ft-sub">' + esc(t) + '</span>'; }
 
     function timeCol(label, times, delayMin, isArr) {
       var sched = fmtClock(times.scheduled), rev = fmtClock(times.revised);
@@ -449,7 +529,10 @@
       } else {
         html += '<div class="ft-t-sched">' + esc(sched.time) + '</div>';
       }
-      if (isArr && delayMin != null && delayMin !== 0) {
+      // Rendered for the DEPARTURE column too: a revised departure is often published
+      // long before (or instead of) a revised arrival, and it is the number that
+      // decides when you leave for the airport.
+      if (delayMin != null && delayMin !== 0) {
         html += '<div class="ft-t-rev ' + (delayMin > 0 ? 'late' : 'early') + '">' + (delayMin > 0 ? '+' : '−') + Math.abs(delayMin) + ' ' + L.min + ' ' + esc(delayMin > 0 ? L.delayLate : L.delayEarly) + '</div>';
       } else if (isArr && delayMin === 0) {
         html += '<div class="ft-t-rev">' + esc(L.ontime) + '</div>';
@@ -510,107 +593,168 @@
         '<div class="ft-arrow">' + svg('arrow') + '</div>' +
         '<div class="ft-ap arr"><div class="ft-iata">' + esc(arrIata) + '</div>' + (arrName ? '<div class="ft-apname">' + esc(arrName) + '</div>' : '') + '</div></div>';
 
-      var times = '<div class="ft-times">' + timeCol(L.dep, t.dep, null, false) + '<div class="mid"></div>' + timeCol(L.arr, t.arr, s ? s.delayMin : null, true) + '</div>';
+      var times = '<div class="ft-times">' + timeCol(L.dep, t.dep, s ? s.depDelayMin : null, false) + '<div class="mid"></div>' + timeCol(L.arr, t.arr, s ? s.delayMin : null, true) + '</div>';
 
       var prog = (live && isAirborne(s && s.status) && live.lat != null && !live.onGround) ? progressBar(leg) : '';
 
-      var meta = '';
-      if (s) {
-        var mp = [];
-        if (s.departure.terminal) mp.push(pill(L.terminal + ' ' + depIata, s.departure.terminal));
-        if (s.departure.gate) mp.push(pill(L.gate + ' ' + depIata, s.departure.gate));
-        if (s.arrival.terminal) mp.push(pill(L.terminal + ' ' + arrIata, s.arrival.terminal));
-        if (s.arrival.gate) mp.push(pill(L.gate + ' ' + arrIata, s.arrival.gate));
-        if (s.arrival.baggageBelt) mp.push(pill(L.belt, s.arrival.baggageBelt));
-        if (mp.length) meta = '<div class="ft-meta">' + mp.join('') + '</div>';
-      }
-
-      var seat = leg.seat ? '<div class="ft-seat">' + svg('seat') + ' ' + esc(L.seat) + ' ' + esc(leg.seat) + '</div>' : '';
-
-      var wx = weatherLine(leg.weather, arrIata);
       var depC = (s && s.departure && s.departure.lat != null && s.departure.lon != null) ? { lat: s.departure.lat, lon: s.departure.lon } : null;
       var arrC = (s && s.arrival && s.arrival.lat != null && s.arrival.lon != null) ? { lat: s.arrival.lat, lon: s.arrival.lon } : null;
-      var hasFix = live && live.lat != null && !live.onGround;
+      // adsb.fi reports how old a position is (seen_pos). It was fetched and shipped
+      // but never read, so over a coverage hole — mid-Atlantic, Siberia, the Pacific
+      // — a frozen fix was drawn with the same confident pulsing dot as a live one.
+      var fixAge = (live && typeof live.seenPos === 'number') ? live.seenPos : null;
+      var fixStale = fixAge != null && fixAge > 300;    // 5 min: shown, but marked stale
+      var fixGone = fixAge != null && fixAge > 1800;    // 30 min: treat as a coverage gap
+      var hasFix = live && live.lat != null && !live.onGround && !fixGone;
       var planeC = hasFix ? { lat: live.lat, lon: live.lon, track: live.track } : null;
       var airborne = s && isAirborne(s.status);
+      var done = airborne || (s && s.status === 'Arrived');   // past the gate
+      var cancelled = s && isCancelled(s.status);
 
-      var liveHtml = '';
-      if (hasFix) {
+      // ---- BAND 1 · STATE: where the aircraft is, and which aircraft it is ----
+      var stateLabel = '', stateBody = '';
+      if (cancelled) {
+        stateLabel = LS[s.status] || s.status;
+        stateBody = cluster([kv('', LS[s.status] || s.status, 'trek-chip--danger', 'x')]);
+      } else if (hasFix) {
         var vr = live.verticalRate, trend = vr != null && vr > 64 ? svg('up') : (vr != null && vr < -64 ? svg('down') : '');
-        var bits = [];
-        var dms = toMs(s && s.departure && (s.departure.revised || s.departure.scheduled));
-        var ams = toMs(s && s.arrival && (s.arrival.revised || s.arrival.scheduled));
-        if (dms && ams && ams > dms) bits.push('<b>' + Math.round(Math.max(0, Math.min(1, (Date.now() - dms) / (ams - dms))) * 100) + ' %</b>');
-        if (ams && ams > Date.now()) { var rem = fmtDur(Math.round((ams - Date.now()) / 60000)); if (rem) bits.push(esc(L.remaining) + ' <b>' + rem + '</b>'); }
-        if (arrC) bits.push('<b>' + nfmt(haversineKm(planeC, arrC)) + '</b> km');
-        var progLine = bits.length ? '<div class="ft-progline">' + bits.join('<span class="sep">·</span>') + '</div>' : '';
-        liveHtml = '<div class="ft-live"><div class="ft-live-head"><span class="ft-dot pulse"></span>' + esc(L.inair) + (live.desc || live.type ? ' · ' + esc(live.desc || live.type) : '') + '</div>' +
-          '<div class="ft-grid">' + stat(L.alt, fmtAlt(live.altBaro) + (trend ? ' ' + trend : '')) + stat(L.spd, fmtSpd(live.groundSpeed)) + stat(L.ac, esc(live.reg || live.type || '—')) + '</div>' + progLine + '</div>';
+        stateLabel = L.inair;
+        var liveChip = fixStale
+          ? '<span class="trek-chip ft-p"><span class="ft-dot ft-dot--idle" aria-hidden="true"></span><span class="ft-v">' + esc(L.inair) + '</span></span>'
+          : '<span class="trek-chip trek-chip--success ft-p"><span class="ft-dot pulse" aria-hidden="true"></span><span class="ft-v">' + esc(L.inair) + '</span></span>';
+        stateBody = cluster([
+          liveChip,
+          (live.desc || live.type) ? kv('', live.desc || live.type) : '',
+          live.reg ? kv(L.reg, live.reg) : '',
+        ]) + '<div class="ft-grid">' + stat(L.alt, fmtAlt(live.altBaro) + (trend ? ' ' + trend : '')) + stat(L.spd, fmtSpd(live.groundSpeed)) + '</div>' +
+          (fixStale ? '<p class="trek-faint ft-sub ft-nosig">' + esc(L.lastseen + ' ' + fmtDur(Math.round(fixAge / 60))) + '</p>' : '');
       } else if (live && live.onGround) {
-        liveHtml = '<div class="ft-live"><div class="ft-live-head"><span class="ft-dot" style="background:var(--text-faint)"></span>' + esc(L.onground) + (live.reg ? ' · ' + esc(live.reg) : '') + '</div></div>';
+        stateLabel = L.onground;
+        stateBody = cluster([
+          '<span class="trek-chip ft-p"><span class="ft-dot ft-dot--idle" aria-hidden="true"></span><span class="ft-v">' + esc(L.onground) + '</span></span>',
+          live.reg ? kv(L.reg, live.reg) : '',
+        ]);
       } else if (airborne) {
         // status says airborne but no ADS-B fix right now (coverage gap) — keep the map
-        liveHtml = '<div class="ft-live"><div class="ft-live-head"><span class="ft-dot" style="background:var(--text-faint)"></span>' + esc(L.inair) + '</div><p class="ft-hint">' + esc(L.nosignal) + '</p></div>';
-      } else if (!s && currentPhase === 'upcoming') {
-        liveHtml = '<p class="ft-hint">' + esc(L.soon) + '</p>';
-      } else if (!s && currentPhase === 'active') {
-        liveHtml = '<p class="ft-hint">' + esc(L.nostatus) + '</p>';
+        stateLabel = L.inair;
+        stateBody = cluster(['<span class="trek-chip ft-p"><span class="ft-dot ft-dot--idle" aria-hidden="true"></span><span class="ft-v">' + esc(L.inair) + '</span></span>']) +
+          '<p class="trek-faint ft-sub ft-nosig">' + esc(L.nosignal) + '</p>';
       }
 
-      // "your aircraft is inbound" — before departure, where the assigned tail is now
-      var inboundHtml = '';
-      if (leg.inbound && leg.inbound.lat != null && !hasFix) {
-        var ib = leg.inbound, etaTxt = '';
-        if (depC && ib.groundSpeed > 60) {
-          var ikm = haversineKm({ lat: ib.lat, lon: ib.lon }, depC), etaMin = Math.round((ikm / 1.852) / ib.groundSpeed * 60);
-          if (etaMin > 0 && etaMin < 600) etaTxt = ' · ' + esc(L.remaining) + ' ~' + fmtDur(etaMin);
+      // ---- BAND 2 · GROUND: everything that happens at an airport ----
+      // Phase suppression instead of a phase router: five guards, no new state.
+      var gp = [];
+      if (!cancelled) {
+        if (leg.seat) gp.push(kv(L.seat, leg.seat, 'trek-chip--accent', 'seat'));
+        if (s) {
+          if (s.departure.terminal && !done) gp.push(kv(L.terminal + ' ' + depIata, s.departure.terminal));
+          if (s.departure.gate && !done) gp.push(kv(L.gate + ' ' + depIata, s.departure.gate));
+          if (s.arrival.terminal) gp.push(kv(L.terminal + ' ' + arrIata, s.arrival.terminal));
+          if (s.arrival.gate) gp.push(kv(L.gate + ' ' + arrIata, s.arrival.gate));
+          if (s.arrival.baggageBelt && done) gp.push(kv(L.belt, s.arrival.baggageBelt));
+          // boarding estimate (~40 min before scheduled departure, airport-local)
+          if (!airborne && s.status !== 'Arrived' && s.status !== 'Boarding' && s.status !== 'GateClosed' && currentPhase !== 'past') {
+            var depLoc = s.departure && (s.departure.revised || s.departure.scheduled), dmn = minsOf(depLoc), depAbs = toMs(depLoc);
+            if (dmn != null && depAbs && (depAbs - 40 * 60000) > Date.now()) {
+              var bm = (dmn - 40 + 1440) % 1440, bh = Math.floor(bm / 60), bmi = bm % 60;
+              gp.push(kv(L.boarding, '~' + (bh < 10 ? '0' : '') + bh + ':' + (bmi < 10 ? '0' : '') + bmi, 'trek-chip--info', 'clock'));
+            }
+          }
         }
-        inboundHtml = '<div class="ft-inbound">' + svg('plane') + '<span>' + esc(L.inbound) + (ib.reg ? ' · ' + esc(ib.reg) : '') + etaTxt + '</span></div>';
-      }
-      // boarding estimate (~40 min before scheduled departure, airport-local)
-      var boardingHtml = '';
-      if (s && !airborne && s.status !== 'Arrived' && s.status !== 'Boarding' && s.status !== 'GateClosed' && currentPhase !== 'past') {
-        var depLoc = s.departure && (s.departure.revised || s.departure.scheduled), dmn = minsOf(depLoc), depAbs = toMs(depLoc);
-        if (dmn != null && depAbs && (depAbs - 40 * 60000) > Date.now()) {
-          var bm = (dmn - 40 + 1440) % 1440, bh = Math.floor(bm / 60), bmi = bm % 60;
-          boardingHtml = '<div class="ft-inbound">' + svg('clock') + '<span>' + esc(L.boarding) + ' ~' + (bh < 10 ? '0' : '') + bh + ':' + (bmi < 10 ? '0' : '') + bmi + '</span></div>';
+        // "your aircraft is inbound" — before departure, where the assigned tail is now
+        if (leg.inbound && leg.inbound.lat != null && !hasFix) {
+          var ib = leg.inbound, etaTxt = '';
+          if (depC && ib.groundSpeed > 60) {
+            var ikm = haversineKm({ lat: ib.lat, lon: ib.lon }, depC), etaMin = Math.round((ikm / 1.852) / ib.groundSpeed * 60);
+            if (etaMin > 0 && etaMin < 600) etaTxt = ' · ' + L.remaining + ' ~' + fmtDur(etaMin);
+          }
+          gp.push(kv(L.inbound, (ib.reg || '') + etaTxt, '', 'plane'));
         }
       }
+
+      // ---- BAND 3 · WEATHER at the destination (label is the arrival IATA) ----
+      var wxBody = cancelled ? '' : weatherBody(leg.weather);
+
+      var bands = [
+        { l: stateLabel, b: stateBody },
+        { l: L.ground, b: cluster([gp.join('')]) },
+        { l: arrIata, b: wxBody },
+      ].filter(function (x) { return x.b; });
+      var bandsHtml = bands.map(function (x, i) { return band(x.l, x.b, i === 0 ? ' ft-band--first' : ''); }).join('');
 
       // Show the map whenever we know the route (both airport coords) OR have a
       // live fix — for scheduled, en-route, coverage-gap AND arrived flights alike.
       // The plane dot only appears with a live fix. Guarded so a map error can
       // never blank the rest of the widget.
       var mapHtml = '';
-      try { if ((depC && arrC) || hasFix) mapHtml = drawMap(depC, arrC, planeC); } catch (e) { mapHtml = ''; }
-      var linkHtml = '';
-      if (hasFix && live.hex) { var mi = mapLinks.length; mapLinks.push(live.hex); linkHtml = '<div class="ft-maplink"><a href="#" data-map="' + mi + '">' + svg('map') + esc(L.openmap) + '</a> <span class="co">· ' + esc(fmtCoord(live.lat, live.lon)) + '</span></div>'; }
+      try { if (((depC && arrC) || hasFix) && !cancelled) mapHtml = drawMap(depC, arrC, planeC); } catch (e) { mapHtml = ''; }
+
+      // ---- BAND 4 · PROGRESS: folded under the map it describes. No pills here —
+      // every value is a live measurement.
+      var progBody = '';
+      if (hasFix && !cancelled) {
+        var dms = toMs(s && s.departure && (s.departure.revised || s.departure.scheduled));
+        var ams = toMs(s && s.arrival && (s.arrival.revised || s.arrival.scheduled));
+        var r1 = [], r2 = [];
+        if (dms && ams && ams > dms) r1.push(num(Math.round(Math.max(0, Math.min(1, (Date.now() - dms) / (ams - dms))) * 100) + ' %', true) + faint(L.flown));
+        if (ams && ams > Date.now()) { var rem = fmtDur(Math.round((ams - Date.now()) / 60000)); if (rem) r1.push(faint(L.remaining) + num(rem, true)); }
+        if (arrC) r2.push(num(nfmt(haversineKm(planeC, arrC)) + ' km', true) + faint(L.togo));
+        if (live.hex) { var mi = mapLinks.length; mapLinks.push(live.hex); r2.push('<a class="trek-btn trek-btn--ghost ft-btn-xs" href="#" data-map="' + mi + '">' + svg('map') + esc(L.openmap) + '</a>'); }
+        var row = function (p) { return p.length ? '<div class="ft-progrow">' + p.join('<span class="ft-grow"></span>') + '</div>' : ''; };
+        progBody = row(r1) + (mapHtml ? '' : prog) + row(r2) +
+          '<div class="trek-faint ft-sub ft-coords">' + esc(fmtCoord(live.lat, live.lon)) + '</div>';
+      }
+      var progHtml = band(L.progress, progBody, ' ft-band--stack');
+
+      // Flights with no status yet still explain themselves.
+      var hint = '';
+      if (!s && currentPhase === 'upcoming') hint = '<p class="ft-hint">' + esc(L.soon) + '</p>';
+      else if (!s && currentPhase === 'active') hint = '<p class="ft-hint">' + esc(L.nostatus) + '</p>';
 
       // the minimap now conveys flown-vs-remaining, so the linear bar is only a
       // fallback when there's no map (e.g. status but no airport coords)
-      return '<div class="ft-leg ft-panel">' + head + route + times + (mapHtml ? '' : prog) + meta + boardingHtml + seat + wx + inboundHtml + liveHtml + mapHtml + linkHtml + '</div>';
+      return '<div class="ft-leg ft-panel">' + head + route + times +
+        ((mapHtml || progBody) ? '' : prog) + bandsHtml + hint + mapHtml + progHtml + '</div>';
     }
 
     function collapsedLeg(leg, idx) {
       var s = leg.status;
       var from = leg.from || (s && s.departure && s.departure.iata) || '';
       var to = leg.to || (s && s.arrival && s.arrival.iata) || '';
-      return '<div class="ft-collapsed" data-exp="' + idx + '">' + svg('check') +
+      return '<button type="button" class="ft-collapsed" data-exp="' + idx + '" aria-expanded="false">' + svg('check') +
         '<span class="rt">' + esc(withSpace(leg.number)) + '</span>' +
         '<span class="grow">' + esc(from) + ' → ' + esc(to) + '</span>' +
-        '<span>' + esc(LS[s.status] || s.status) + '</span></div>';
+        '<span>' + esc(LS[s.status] || s.status) + '</span></button>';
     }
 
+    // Layover on ABSOLUTE time. This used to subtract minute-of-day values and wrap
+    // any negative result into [0,1439] — so an inbound delayed past its connection
+    // (arrive 17:30, next departs 15:30) rendered as a comfortable "22 h layover"
+    // in neutral grey, at exactly the moment the connection was gone. The wrap also
+    // made the `.broken` state unreachable. UTC instants are used when the status
+    // provides them; the local-clock difference is only a fallback, and one that
+    // cannot distinguish "next day" from "already missed" — so it never claims a
+    // connection is broken.
     function layover(prev, next) {
+      var aUtc = prev.status && prev.status.arrival && (prev.status.arrival.revisedUtc || prev.status.arrival.scheduledUtc);
+      var dUtc = next.status && next.status.departure && (next.status.departure.revisedUtc || next.status.departure.scheduledUtc);
       var a = (prev.status && prev.status.arrival && (prev.status.arrival.revised || prev.status.arrival.scheduled)) || prev.arrTime;
       var d = (next.status && next.status.departure && (next.status.departure.revised || next.status.departure.scheduled)) || next.depTime;
-      var am = minsOf(a), dm = minsOf(d), mins = null;
-      if (am != null && dm != null) { mins = dm - am; if (mins < 0) mins += 1440; }
+      var mins = null, exact = false;
+      var am2 = toMs(aUtc), dm2 = toMs(dUtc);
+      if (am2 != null && dm2 != null) { mins = Math.round((dm2 - am2) / 60000); exact = true; }
+      else {
+        var am = minsOf(a), dm = minsOf(d);
+        if (am != null && dm != null) { mins = dm - am; if (mins < 0) mins += 1440; }
+      }
       var at = next.from || (next.status && next.status.departure && next.status.departure.iata) || '';
-      var cls = 'ft-layover', dur = mins != null ? fmtDur(mins) : null, extra = '';
-      if (mins != null && mins < 0) { cls += ' broken'; extra = ' · ' + L.brokenConn; }
+      var cls = 'ft-layover', extra = '';
+      var broken = exact && mins != null && mins < 0;
+      var dur = (mins != null && !broken) ? fmtDur(mins) : null;
+      if (broken) { cls += ' broken'; extra = ' · ' + L.brokenConn; }
       else if (mins != null && mins < 45) { cls += ' tight'; extra = ' · ' + L.tightConn; }
-      return '<div class="' + cls + '"><span class="ln"></span><span>' + svg((mins != null && mins < 45) ? 'alert' : 'arrow') + ' ' + esc(L.layover) + (at ? ' ' + esc(at) : '') + (dur ? ' · ' + dur : '') + extra + '</span></div>';
+      var warn = broken || (mins != null && mins < 45);
+      return '<div class="' + cls + '"><span class="ln"></span><span>' + svg(warn ? 'alert' : 'arrow') + ' ' + esc(L.layover) + (at ? ' ' + esc(at) : '') + (dur ? ' · ' + dur : '') + extra + '</span></div>';
     }
 
     function journeyHeader(data, legs) {
@@ -626,9 +770,8 @@
       legs.forEach(function (l) { var st = l.status && l.status.status; if (st && (order[st] || 0) > worstScore) { worstScore = order[st] || 0; worst = st; } if (st === 'Arrived' && worst == null) worst = 'Arrived'; });
       var totalMin = (b.depMs && b.arrMs && b.arrMs > b.depMs) ? Math.round((b.arrMs - b.depMs) / 60000) : null;
       var sub = [];
-      sub.push(legs.length + ' ' + (legs.length === 1 ? 'Leg' : 'Legs'));
+      sub.push(legs.length + ' ' + (legs.length === 1 ? L.leg : L.legs));
       if (totalMin) sub.push(fmtDur(totalMin) + ' ' + L.total);
-      if (b.pnr) sub.push(esc(b.pnr));
       return '<div class="ft-journey"><div><div class="rt">' + route + '</div><div class="sub">' + sub.join(' · ') + '</div></div><div class="spacer"></div>' + (worst ? chip(worst) : '') + '</div>';
     }
 
@@ -694,13 +837,31 @@
           '<button class="trek-btn trek-btn--primary" id="ft-save">' + esc(L.save) + '</button></div>';
       }
 
-      // AeroDataBox key is an instance-wide, admin-managed setting (set through
-      // TREK's admin-guarded plugin config API — see README). Plugin routes can't
-      // verify admin status, so there is deliberately no in-widget entry; when no
-      // key is configured we just show an informational hint so the missing
-      // schedule/gate data is explained.
+      // AeroDataBox key — instance-wide. The gate is data.canSetKey, computed by
+      // the SERVER from req.user.isAdmin (reliable since TREK 3.4 / TREK#1569);
+      // the client's own notion of admin is never trusted, so the server stays the
+      // single source of truth. Non-admins only get the informational hint, which
+      // explains the missing schedule/gate data and points at the admin.
+      // Once a key IS active there is nothing to say: the row would otherwise
+      // repeat "key active · Replace · Remove" on every single flight reservation,
+      // which is noise on a setting that is instance-wide and set once. Managing an
+      // existing key is a rare, deliberate act — it lives in the README's console
+      // command (POST /api/plugins/flight-tracker/key with an empty apiKey), not on
+      // every widget. Only the two actionable states render anything.
       if (data.applicable !== false && legs.length && !data.hasKey) {
-        html += '<div class="ft-keyrow"><p class="ft-hint ft-keyadmin">' + svg('key') + ' ' + esc(L.keyconfig) + '</p></div>';
+        if (data.canSetKey) {
+          html += '<div class="ft-keyrow">';
+          if (keyOpen) {
+            html += '<div class="ft-editrow"><input class="trek-input" id="ft-keyin" type="password" placeholder="' + esc(L.keyph) + '" aria-label="' + esc(L.keyph) + '" />' +
+              '<button class="trek-btn trek-btn--primary" id="ft-keysave">' + esc(L.save) + '</button></div>' +
+              '<p class="ft-hint">' + esc(L.keyhint) + '</p>';
+          } else {
+            html += '<button class="ft-keytoggle" id="ft-keyt">' + svg('key') + ' ' + esc(L.keyadd) + '</button>';
+          }
+          html += '</div>';
+        } else {
+          html += '<div class="ft-keyrow"><p class="ft-hint ft-keyadmin">' + svg('key') + ' ' + esc(L.keyconfig) + '</p></div>';
+        }
       }
 
       if (legs.length) {
@@ -724,22 +885,89 @@
       document.querySelectorAll('#ft-redetect').forEach(function (rd) { rd.addEventListener('click', function () { redetect(rd); }); });
       document.querySelectorAll('.ft-collapsed[data-exp]').forEach(function (c) { c.addEventListener('click', function () { expanded[c.getAttribute('data-exp')] = true; render(last); }); });
       app.querySelectorAll('a[data-map]').forEach(function (a) { a.addEventListener('click', function (ev) { ev.preventDefault(); var h = mapLinks[+a.getAttribute('data-map')]; if (h) window.trek.openExternal('https://globe.adsb.fi/?icao=' + encodeURIComponent(h)); }); });
+      var kt = document.getElementById('ft-keyt'); if (kt) kt.addEventListener('click', function () { keyOpen = true; render(last); });
+      var ks = document.getElementById('ft-keysave'), ki = document.getElementById('ft-keyin');
+      if (ks && ki) { var gk = function () { saveKey(ki.value); }; ks.addEventListener('click', gk); ki.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); gk(); } }); }
     }
 
-    async function saveNumber(v) { if (busy) return; busy = true; try { var d = await window.trek.invoke('/set', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId, flightNumber: v } }); editing = false; last = d; render(d); } catch (e) { window.trek.notify('error', e.message || 'error'); } busy = false; }
-    async function redetect(btn) { if (busy) return; busy = true; if (btn) { var v = btn.querySelector('svg'); if (v) v.classList.add('ft-spin'); } try { var d = await window.trek.invoke('/set', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId, flightNumber: '' } }); editing = false; expanded = {}; last = d; render(d); window.trek.notify('success', L.redetected); } catch (e) { window.trek.notify('error', e.message || 'error'); } busy = false; }
-    async function doRefresh(btn) { if (btn) { var v = btn.querySelector('svg'); if (v) v.classList.add('ft-spin'); } try { var d = await window.trek.invoke('/refresh', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId } }); last = d; render(d); } catch (e) { window.trek.notify('error', e.message || 'error'); if (btn) { var v2 = btn.querySelector('svg'); if (v2) v2.classList.remove('ft-spin'); } } }
+    // Persist the instance-wide AeroDataBox key. The server re-checks admin rights
+    // and answers 403 if they are missing, so this is a convenience gate only.
+    async function saveKey(v) {
+      if (busy) return;
+      busy = true;
+      var clearing = !String(v || '').trim();
+      try {
+        await window.trek.invoke('/key', { method: 'POST', body: { apiKey: v } });
+        keyOpen = false;
+        window.trek.notify('success', clearing ? L.keycleared : L.keysaved);
+        await doRefresh(null);
+      } catch (e) {
+        window.trek.notify('error', (e && (e.code === 403 || e.status === 403)) ? L.keynotallowed : (e.message || 'error'));
+      }
+      busy = false;
+    }
+
+    async function saveNumber(v) { if (busy) return; busy = true; try { var d = await window.trek.invoke('/set', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId, flightNumber: v, locale: (ctx && ctx.locale) || '' } }); editing = false; last = d; render(d); } catch (e) { window.trek.notify('error', e.message || 'error'); } busy = false; }
+    async function redetect(btn) { if (busy) return; busy = true; if (btn) { var v = btn.querySelector('svg'); if (v) v.classList.add('ft-spin'); } try { var d = await window.trek.invoke('/set', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId, flightNumber: '', locale: (ctx && ctx.locale) || '' } }); editing = false; expanded = {}; last = d; render(d); window.trek.notify('success', L.redetected); } catch (e) { window.trek.notify('error', e.message || 'error'); } busy = false; }
+    async function doRefresh(btn) { if (btn) { var v = btn.querySelector('svg'); if (v) v.classList.add('ft-spin'); } try { var d = await window.trek.invoke('/refresh', { method: 'POST', body: { tripId: ctx.tripId, reservationId: ctx.reservationId, locale: (ctx && ctx.locale) || '' } }); last = d; render(d); } catch (e) { window.trek.notify('error', e.message || 'error'); if (btn) { var v2 = btn.querySelector('svg'); if (v2) v2.classList.remove('ft-spin'); } } }
+
+    // Screen-reader announcements. The widget's whole premise is that it updates
+    // itself, yet none of it was announced. A blanket aria-live on #app would be
+    // worse than silence — it would re-read route, times, weather and coordinates
+    // every minute — so this region is a SIBLING of #app (render() never rebuilds
+    // it) and receives only what actually CHANGED.
+    function announce(d) {
+      var region = document.getElementById('ft-live');
+      if (!region || !last || !d || !Array.isArray(d.legs)) return;
+      var prev = {};
+      (last.legs || []).forEach(function (l) { if (l && l.number) prev[l.number] = l; });
+      var msgs = [];
+      (d.legs || []).forEach(function (l) {
+        var s = l && l.status, p = prev[l.number], ps = p && p.status;
+        if (!s || !ps) return;
+        var num = withSpace(l.number);
+        if (s.status !== ps.status) msgs.push(num + ' ' + (LS[s.status] || s.status));
+        else if (s.delayMin != null && s.delayMin !== ps.delayMin && Math.abs(s.delayMin) >= 5) {
+          msgs.push(num + ' ' + (s.delayMin > 0 ? '+' : '') + s.delayMin + ' ' + L.min);
+        } else if (s.depDelayMin != null && s.depDelayMin !== ps.depDelayMin && Math.abs(s.depDelayMin) >= 5) {
+          msgs.push(num + ' ' + (s.depDelayMin > 0 ? '+' : '') + s.depDelayMin + ' ' + L.min);
+        } else {
+          var g = (s.departure && s.departure.gate) || (s.arrival && s.arrival.gate);
+          var pg = (ps.departure && ps.departure.gate) || (ps.arrival && ps.arrival.gate);
+          if (g && g !== pg) msgs.push(num + ' ' + L.gate + ' ' + g);
+        }
+      });
+      if (msgs.length) region.textContent = msgs.join('. ');
+    }
+
+    // render() replaces the whole card via innerHTML, which destroys focus and any
+    // half-typed value. The poll runs every minute, so without this guard an admin
+    // pasting a RapidAPI key — the one setup step the plugin depends on — could
+    // have the field wiped mid-paste, and a keyboard user was thrown back to the
+    // top of the card every 60s. Keep fetching; just defer the repaint.
+    function interactive() {
+      if (editing || keyOpen) return true;
+      var a = document.activeElement;
+      return !!(a && (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA') && app.contains(a));
+    }
 
     async function load() {
       if (!ctx || !ctx.reservationId) { render(null); return; }
       try {
-        var d = await window.trek.invoke('/status?tripId=' + encodeURIComponent(ctx.tripId || '') + '&reservationId=' + encodeURIComponent(ctx.reservationId));
-        last = d; render(d);
+        var d = await window.trek.invoke('/status?tripId=' + encodeURIComponent(ctx.tripId || '') + '&reservationId=' + encodeURIComponent(ctx.reservationId) + '&locale=' + encodeURIComponent((ctx && ctx.locale) || ''));
+        announce(d);
+        last = d;
+        if (!interactive()) render(d);
       } catch (e) {
         // keep the last good data on a transient poll failure instead of wiping it
         if (!last) app.innerHTML = '<p class="ft-err">' + esc(e.message || 'error') + '</p>';
       }
     }
+
+    // Repaint once the user is done typing, so a deferred update is never lost.
+    document.addEventListener('focusout', function () {
+      setTimeout(function () { if (last && !interactive()) render(last); }, 0);
+    });
 
     // Self-scheduling poll: pause while the tab is hidden, stop once the flight is
     // done, poll slowly for far-future flights — to spare the AeroDataBox quota.
@@ -759,7 +987,14 @@
     }
     async function tick() { pollT = null; if (!document.hidden) await load(); scheduleNext(); }
 
-    function applyLocale(m) { var de = (m.locale || '').toLowerCase().indexOf('de') === 0; L = de ? STR.de : STR.en; LS = de ? SL.de : SL.en; }
+    function applyLocale(m) {
+      var de = (m.locale || '').toLowerCase().indexOf('de') === 0;
+      L = de ? STR.de : STR.en; LS = de ? SL.de : SL.en;
+      // The frame is a separate document and does not inherit TREK's lang, so the
+      // markup declares lang="en" — German content was being announced with English
+      // phonemes by screen readers (WCAG 3.1.1).
+      try { document.documentElement.lang = m.locale || (de ? 'de' : 'en'); } catch (e) {}
+    }
 
     window.trek.onContext(function (m) {
       var prev = ctx && ctx.reservationId;
