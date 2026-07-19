@@ -292,7 +292,20 @@
       var lats = all.map(function (p) { return p.lat; }), lons = all.map(function (p) { return p.lon; });
       var minLat = Math.min.apply(null, lats), maxLat = Math.max.apply(null, lats);
       var minLon = Math.min.apply(null, lons), maxLon = Math.max.apply(null, lons);
-      var spanLat = Math.max(maxLat - minLat, 4), spanLon = Math.max(maxLon - minLon, 4);
+      // Minimum viewport. With a route we can frame it tightly, but with ONLY a live
+      // fix (no airport coordinates — the state every user without an AeroDataBox
+      // key is permanently in) both extents collapse to a point. A 4° window then
+      // zooms so far in that the bundled coarse world outline has no geometry to
+      // show inland, and the map renders as an empty grey box. Frame a continent
+      // instead, so the aircraft sits in recognisable geography.
+      // NB: this has to expand the EXTENT, not just feed the padding calculation —
+      // a bare Math.max on the span left the extent at a point and only widened the
+      // margin, which is how a single fix still ended up in a ~6deg window.
+      var minSpan = route ? 4 : 45;
+      var cLat = (minLat + maxLat) / 2, cLon = (minLon + maxLon) / 2;
+      if (maxLat - minLat < minSpan) { minLat = cLat - minSpan / 2; maxLat = cLat + minSpan / 2; }
+      if (maxLon - minLon < minSpan) { minLon = cLon - minSpan / 2; maxLon = cLon + minSpan / 2; }
+      var spanLat = maxLat - minLat, spanLon = maxLon - minLon;
       var padLat = spanLat * 0.22 + 2, padLon = spanLon * 0.22 + 2;
       minLat -= padLat; maxLat += padLat; minLon -= padLon; maxLon += padLon;
       spanLat = maxLat - minLat; spanLon = maxLon - minLon;
