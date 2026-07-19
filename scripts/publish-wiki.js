@@ -16,7 +16,19 @@ const { execFileSync } = require('child_process');
 
 const REPO = path.join(__dirname, '..');
 const SRC = path.join(REPO, 'wiki');
-const WIKI_URL = process.env.WIKI_URL || 'https://github.com/fbnlrz/trek-track.wiki.git';
+// Derive the wiki URL from origin, so it inherits whatever transport (and
+// credentials) already work for the code repo — usually SSH.
+function wikiUrl() {
+  if (process.env.WIKI_URL) return process.env.WIKI_URL;
+  try {
+    const origin = execFileSync('git', ['remote', 'get-url', 'origin'],
+      { cwd: REPO, encoding: 'utf8' }).trim();
+    return origin.replace(/\.git$/, '') + '.wiki.git';
+  } catch (e) {
+    return 'https://github.com/fbnlrz/trek-track.wiki.git';
+  }
+}
+const WIKI_URL = wikiUrl();
 const DRY = process.argv.includes('--dry');
 
 if (!fs.existsSync(SRC)) { console.error('no wiki/ directory'); process.exit(1); }
@@ -30,9 +42,12 @@ try {
   try {
     git(['clone', '--depth', '1', WIKI_URL, tmp], REPO);
   } catch (e) {
-    console.error('Could not clone ' + WIKI_URL + '\n' +
-      'If the wiki has never been used, create one page in the GitHub UI first\n' +
-      '(repo → Wiki → Create the first page), then re-run this.\n\n' + (e.stderr || e.message));
+    console.error('Could not clone ' + WIKI_URL + '\n\n' +
+      'Enabling the Wiki checkbox in Settings does NOT create the repository —\n' +
+      'it only appears once the first page has been saved. Open\n' +
+      '  https://github.com/fbnlrz/trek-track/wiki\n' +
+      'click "Create the first page", save anything (it gets overwritten), then\n' +
+      're-run this script.\n\n' + (e.stderr || e.message));
     process.exit(1);
   }
 
