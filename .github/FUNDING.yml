@@ -1,0 +1,11 @@
+# Adds the "Sponsor" button to the repository.
+#
+# NOTE: the `github:` entry only works once fbnlrz is enrolled in the GitHub
+# Sponsors programme at https://github.com/sponsors — that requires identity
+# verification, a Stripe Connect payout account and tax forms, and cannot be
+# enabled from a repository file. Uncomment it after enrolment; until then the
+# links below already give the repo a Sponsor button.
+# github: [fbnlrz]
+
+ko_fi: fbnlrz
+buy_me_a_coffee: fbnlrz
